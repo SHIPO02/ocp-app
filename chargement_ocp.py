@@ -26,14 +26,13 @@ def force_nombre(valeur):
         return float(valeur)
     s = str(valeur).strip()
     if s in ("-", "", "nan"): return 0.0
-    # Nettoyage pour garder uniquement les chiffres (ex: 12,104. -> 12104)
     nettoye = re.sub(r'[^\d]', '', s)
     if len(nettoye) > 12: return 0.0
     return float(nettoye) if nettoye else 0.0
 
 def generate_word(df_result, date_selection):
     doc = Document()
-    doc.add_heading(f"Rapport de Chargement OCP", 0)
+    doc.add_heading("Rapport de Chargement OCP", 0)
     doc.add_paragraph(f"Période : {date_selection}")
     table = doc.add_table(rows=1, cols=len(df_result.columns))
     table.style = 'Table Grid'
@@ -51,7 +50,6 @@ def generate_word(df_result, date_selection):
 # --- HEADER ---
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    # Test plusieurs extensions pour le logo
     logo_found = False
     for ext in [".png", ".jpg", ".jpeg", ""]:
         if os.path.exists(f"logo_ocp{ext}"):
@@ -71,22 +69,16 @@ file = st.file_uploader("📂 Charger le fichier Reporting-JPH (Excel)", type=["
 if file:
     with st.status("🚀 Analyse des données...", expanded=False) as status:
         try:
-            # On lit tout l'onglet 'EXPORT'
             df = pd.read_excel(file, sheet_name='EXPORT', header=None)
             
-            # --- SCANNER DE LIGNES AMÉLIORÉ ---
-            # On cherche partout dans le fichier pour trouver les lignes
             coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
             for r in range(len(df)):
-                # On scanne les premières colonnes (A, B, C) pour trouver les mots-clés
                 row_values = " ".join(df.iloc[r, 0:5].astype(str).upper())
                 if "EXPORT ENGRAIS" in row_values: coords["ENGRAIS"] = r
                 if "EXPORT CAMIONS" in row_values: coords["CAMIONS"] = r
                 if "VL CAMIONS" in row_values: coords["VL"] = r
             
-            # --- DETECTION DES DATES (Ligne 3) ---
             ligne_dates = df.iloc[2, :]
-            # Les données commencent généralement à la colonne 4 (Index 3)
             cols_data = [j for j in range(3, len(ligne_dates)) if pd.notna(ligne_dates[j])]
 
             final_list = []
@@ -99,7 +91,6 @@ if file:
                     v2 = force_nombre(df.iloc[coords["CAMIONS"], j]) if coords["CAMIONS"] is not None else 0.0
                     v3 = force_nombre(df.iloc[coords["VL"], j]) if coords["VL"] is not None else 0.0
                     
-                    # On n'ajoute que si au moins une valeur est > 0 pour éviter les lignes vides
                     if v1 > 0 or v2 > 0 or v3 > 0:
                         final_list.append({
                             "Date": date_label, 
@@ -120,7 +111,35 @@ if file:
 
                 st.divider()
                 st.markdown("### 📥 Transférer les résultats")
+                
                 c1, c2 = st.columns(2)
+                
+                # --- EXPORT EXCEL/CSV ---
                 with c1:
-                    st.download_button(label="Excel / CSV", data=show
+                    csv_data = show_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Télécharger Excel / CSV",
+                        data=csv_data,
+                        file_name=f"OCP_Export_{choix}.csv",
+                        mime="text/csv"
+                    )
+                
+                # --- EXPORT WORD ---
+                with c2:
+                    word_data = generate_word(show_df, choix)
+                    st.download_button(
+                        label="📄 Télécharger Fichier WORD",
+                        data=word_data,
+                        file_name=f"Rapport_OCP_{choix}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                
+                status.update(label="✅ Traitement terminé", state="complete")
+            else:
+                st.error("❌ Données non détectées. Vérifiez les mots-clés dans Excel.")
+                status.update(label="⚠️ Échec", state="error")
+                
+        except Exception as e:
+            st.error(f"Erreur : {e}")
+
 
