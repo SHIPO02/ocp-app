@@ -425,21 +425,7 @@ st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + 
 
 if jerf_df is not None or safi_df is not None:
 
-    # Jerf : par jour (date)
-    if jerf_df is not None:
-        j_jour = jerf_df[["Date", "TOTAL Jerf"]].copy()
-        j_jour.rename(columns={"Date": "Jour"}, inplace=True)
-    else:
-        j_jour = pd.DataFrame(columns=["Jour", "TOTAL Jerf"])
-
-    # Safi : par jour (Mois + Jour combiné)
-    if safi_df is not None:
-        s_jour = safi_df[["Date Safi", "TOTAL Safi"]].copy()
-        s_jour.rename(columns={"Date Safi": "Jour"}, inplace=True)
-    else:
-        s_jour = pd.DataFrame(columns=["Jour", "TOTAL Safi"])
-
-    # ── Total par mois ─────────────────────────────────────────────────────
+    # ── Total par mois Jerf ────────────────────────────────────────────────
     if jerf_df is not None:
         jdf2 = jerf_df.copy()
         jdf2["Mois"] = jdf2["Date"].apply(extract_mois_label)
@@ -447,11 +433,13 @@ if jerf_df is not None or safi_df is not None:
     else:
         j_mois = pd.DataFrame(columns=["Mois", "TOTAL Jerf"])
 
+    # ── Total par mois Safi ────────────────────────────────────────────────
     if safi_df is not None:
         s_mois = safi_df.groupby("Mois")["TOTAL Safi"].sum().reset_index()
     else:
         s_mois = pd.DataFrame(columns=["Mois", "TOTAL Safi"])
 
+    # ── Fusion ────────────────────────────────────────────────────────────
     if jerf_df is not None and safi_df is not None:
         tot = pd.merge(j_mois, s_mois, on="Mois", how="outer").fillna(0)
     elif jerf_df is not None:
@@ -463,7 +451,7 @@ if jerf_df is not None or safi_df is not None:
 
     # Ligne total général
     total_row = pd.DataFrame([{
-        "Mois": "🔢 TOTAL GÉNÉRAL",
+        "Mois":            "TOTAL GENERAL",
         "TOTAL Jerf":      tot["TOTAL Jerf"].sum(),
         "TOTAL Safi":      tot["TOTAL Safi"].sum(),
         "TOTAL Jerf+Safi": tot["TOTAL Jerf+Safi"].sum()
@@ -479,12 +467,16 @@ if jerf_df is not None or safi_df is not None:
             "TOTAL Jerf+Safi": st.column_config.NumberColumn("Total Jerf+Safi", format="%d"),
         }
     )
-    export_buttons(disp, "Total_Consolide", "Rapport Total Jerf + Safi", "Consolidé", "total")
+    export_buttons(disp, "Total_Consolide", "Rapport Total Jerf + Safi", "Consolide", "total")
 
-    if len(tot) > 1:
-        st.bar_chart(tot.set_index("Mois")[["TOTAL Jerf", "TOTAL Safi"]])
+    # ── Graphique consolidé par mois ──────────────────────────────────────
+    if len(tot) > 0:
+        st.markdown("#### Evolution mensuelle — Jerf vs Safi vs Total")
+        chart_cols = [c for c in ["TOTAL Jerf", "TOTAL Safi", "TOTAL Jerf+Safi"] if c in tot.columns]
+        st.bar_chart(tot.set_index("Mois")[chart_cols])
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
