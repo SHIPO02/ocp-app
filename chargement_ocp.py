@@ -305,17 +305,71 @@ if file_safi:
 st.sidebar.divider()
 st.sidebar.header("🔍 Filtrage")
 
-if jerf_df is not None:
-    dates_jerf = ["Toutes"] + list(jerf_df["Date"].unique())
-    choix_jerf = st.sidebar.selectbox("📅 Période Jerf", dates_jerf)
-else:
-    choix_jerf = "Toutes"
+def filtre_dates_sidebar(df, label_prefix, key_prefix, date_col="Date"):
+    """
+    Retourne la liste des dates sélectionnées (ou [] = toutes).
+    Mode : Mois ou Dates individuelles.
+    """
+    # Construire mapping mois -> dates
+    mois_map = {}
+    for d in df[date_col].unique():
+        try:
+            parts = str(d).split("/")
+            noms = {1:"Jan",2:"Fév",3:"Mar",4:"Avr",5:"Mai",6:"Jun",
+                    7:"Jul",8:"Aoû",9:"Sep",10:"Oct",11:"Nov",12:"Déc"}
+            m_label = f"{noms.get(int(parts[1]),'?')} {parts[2]}"
+        except:
+            m_label = "Autre"
+        mois_map.setdefault(m_label, []).append(d)
 
-if safi_df is not None:
-    dates_safi = ["Toutes"] + list(safi_df["Date"].unique())
-    choix_date_safi = st.sidebar.selectbox("📅 Date Safi", dates_safi)
+    mode = st.sidebar.radio(
+        f"Filtrer {label_prefix} par",
+        ["Tout", "Mois", "Dates"],
+        horizontal=True, key=f"{key_prefix}_mode"
+    )
+
+    if mode == "Tout":
+        return []
+
+    elif mode == "Mois":
+        mois_list = sorted(mois_map.keys())
+        choix_mois = st.sidebar.multiselect(
+            f"Mois {label_prefix}", mois_list, key=f"{key_prefix}_mois"
+        )
+        if not choix_mois:
+            return []
+        dates_sel = []
+        for m in choix_mois:
+            dates_sel.extend(mois_map[m])
+        return dates_sel
+
+    else:  # Dates individuelles
+        all_dates = sorted(df[date_col].unique().tolist(),
+                           key=lambda d: tuple(int(x) for x in str(d).split("/"))[::-1])
+        choix_dates = st.sidebar.multiselect(
+            f"Dates {label_prefix}", all_dates, key=f"{key_prefix}_dates"
+        )
+        return choix_dates  # [] = rien sélectionné = tout
+
+# ── Filtre Jerf ──────────────────────────────────────────────────────────────
+if jerf_df is not None:
+    st.sidebar.markdown("**🏭 Jerf Lasfar**")
+    sel_jerf = filtre_dates_sidebar(jerf_df, "Jerf", "jerf")
 else:
-    choix_date_safi = "Toutes"
+    sel_jerf = []
+
+# ── Filtre Safi ──────────────────────────────────────────────────────────────
+if safi_df is not None:
+    st.sidebar.markdown("**🏗️ Safi**")
+    sel_safi = filtre_dates_sidebar(safi_df, "Safi", "safi")
+else:
+    sel_safi = []
+
+# Helper : appliquer filtre sur un df
+def appliquer_filtre(df, sel, col="Date"):
+    if not sel:
+        return df
+    return df[df[col].isin(sel)]
 
 # ─── CUMULS ──────────────────────────────────────────────────────────────────
 cumul_jerf  = float(jerf_df["TOTAL Jerf"].sum()) if jerf_df is not None else 0.0
@@ -355,7 +409,7 @@ st.divider()
 st.markdown('<div class="section-header jerf">🏭 Jerf Lasfar — Chargement Export</div>', unsafe_allow_html=True)
 
 if jerf_df is not None:
-    show_jerf = jerf_df if choix_jerf == "Toutes" else jerf_df[jerf_df["Date"] == choix_jerf]
+    show_jerf = appliquer_filtre(jerf_df, sel_jerf)
     st.dataframe(
         show_jerf, use_container_width=True, hide_index=True,
         height=min(500, 45 + 35 * len(show_jerf)),
@@ -367,9 +421,10 @@ if jerf_df is not None:
             "TOTAL Jerf":     st.column_config.NumberColumn("TOTAL Jerf ✅",  format="%d"),
         }
     )
-    export_buttons(show_jerf, "Jerf", "Rapport Jerf Lasfar", choix_jerf, "jerf")
-    if choix_jerf == "Toutes" and len(jerf_df) > 1:
-        st.line_chart(jerf_df.set_index("Date")["TOTAL Jerf"], color="#00843D")
+    label_jerf = ", ".join(sel_jerf) if sel_jerf else "Toutes"
+    export_buttons(show_jerf, "Jerf", "Rapport Jerf Lasfar", label_jerf, "jerf")
+    if len(show_jerf) > 1:
+        st.line_chart(show_jerf.set_index("Date")["TOTAL Jerf"], color="#00843D")
 else:
     st.info("⬅️ Chargez le fichier **Reporting-JPH 2026** dans la barre latérale pour voir les données Jerf.")
 
@@ -380,7 +435,7 @@ st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP 
 
 if safi_df is not None:
     # Filtrage par date
-    show_safi = safi_df.copy() if choix_date_safi == "Toutes" else safi_df[safi_df["Date"] == choix_date_safi].copy()
+    show_safi = appliquer_filtre(safi_df, sel_safi).copy()
 
     # Tableau affiché — uniquement Date + TSP Export + TSP ML + TOTAL
     display_safi = show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
@@ -404,8 +459,9 @@ if safi_df is not None:
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
         }
     )
+    label_safi = ", ".join(sel_safi) if sel_safi else "Toutes"
     export_buttons(show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
-                   "Safi", "Rapport Safi TSP", choix_date_safi, "safi")
+                   "Safi", "Rapport Safi TSP", label_safi, "safi")
 
     # Graphique si plusieurs lignes
     if len(show_safi) > 1:
@@ -425,11 +481,11 @@ if jerf_df is not None or safi_df is not None:
     safi_filtered = safi_df.copy() if safi_df is not None else None
 
     # Filtre date Jerf
-    if jerf_filtered is not None and choix_jerf != "Toutes":
-        jerf_filtered = jerf_filtered[jerf_filtered["Date"] == choix_jerf]
+    if jerf_filtered is not None:
+        jerf_filtered = appliquer_filtre(jerf_filtered, sel_jerf)
     # Filtre date Safi
-    if safi_filtered is not None and choix_date_safi != "Toutes":
-        safi_filtered = safi_filtered[safi_filtered["Date"] == choix_date_safi]
+    if safi_filtered is not None:
+        safi_filtered = appliquer_filtre(safi_filtered, sel_safi)
 
     # ── Tableau par jour : fusion Jerf + Safi sur la date dd/mm/yyyy ──────
     if jerf_filtered is not None:
