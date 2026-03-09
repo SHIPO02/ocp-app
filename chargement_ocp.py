@@ -420,14 +420,25 @@ st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + 
 
 if jerf_df is not None or safi_df is not None:
 
+    # ── Appliquer les filtres actifs sur chaque source ──────────────────
+    jerf_filtered = jerf_df.copy() if jerf_df is not None else None
+    safi_filtered = safi_df.copy() if safi_df is not None else None
+
+    # Filtre date Jerf
+    if jerf_filtered is not None and choix_jerf != "Toutes":
+        jerf_filtered = jerf_filtered[jerf_filtered["Date"] == choix_jerf]
+    # Filtre date Safi
+    if safi_filtered is not None and choix_date_safi != "Toutes":
+        safi_filtered = safi_filtered[safi_filtered["Date"] == choix_date_safi]
+
     # ── Tableau par jour : fusion Jerf + Safi sur la date dd/mm/yyyy ──────
-    if jerf_df is not None:
-        j_day = jerf_df[["Date", "TOTAL Jerf"]].copy()
+    if jerf_filtered is not None:
+        j_day = jerf_filtered[["Date", "TOTAL Jerf"]].copy()
     else:
         j_day = pd.DataFrame(columns=["Date", "TOTAL Jerf"])
 
-    if safi_df is not None:
-        s_day = safi_df[["Date", "TOTAL Safi"]].copy()
+    if safi_filtered is not None:
+        s_day = safi_filtered[["Date", "TOTAL Safi"]].copy()
     else:
         s_day = pd.DataFrame(columns=["Date", "TOTAL Safi"])
 
