@@ -10,36 +10,23 @@ st.set_page_config(page_title="OCP - Suivi Production MFS", layout="wide", page_
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&display=swap');
-
         :root {
             --ocp-green: #00843D;
             --ocp-dark:  #005C2A;
-            --ocp-light: #E8F5EE;
             --jerf-color: #00843D;
             --safi-color: #1A6FA8;
             --total-color: #C05A00;
         }
-
         html, body, [class*="css"] { font-family: 'Barlow', sans-serif; }
         .stApp { background-color: #F4F7F5; }
         h1, h2, h3 { color: var(--ocp-dark) !important; font-family: 'Barlow Condensed', sans-serif !important; }
-
-        /* KPI Cards */
         .kpi-card {
-            border-radius: 12px;
-            padding: 20px 24px;
-            color: white;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-            position: relative;
-            overflow: hidden;
+            border-radius: 12px; padding: 20px 24px; color: white;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden;
         }
         .kpi-card::before {
-            content: '';
-            position: absolute;
-            top: -20px; right: -20px;
-            width: 100px; height: 100px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.1);
+            content: ''; position: absolute; top: -20px; right: -20px;
+            width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.1);
         }
         .kpi-card.jerf  { background: linear-gradient(135deg, #00843D, #005C2A); }
         .kpi-card.safi  { background: linear-gradient(135deg, #1A6FA8, #0D4A73); }
@@ -47,32 +34,20 @@ st.markdown("""
         .kpi-label { font-size: 12px; font-weight: 600; opacity: 0.85; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
         .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 700; line-height: 1; }
         .kpi-sub   { font-size: 11px; opacity: 0.7; margin-top: 4px; }
-
-        /* Section headers */
         .section-header {
             display: flex; align-items: center; gap: 10px;
-            padding: 10px 16px; border-radius: 8px;
-            margin: 20px 0 10px 0;
-            font-family: 'Barlow Condensed', sans-serif;
-            font-size: 20px; font-weight: 700; color: white;
+            padding: 10px 16px; border-radius: 8px; margin: 20px 0 10px 0;
+            font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: white;
         }
         .section-header.jerf  { background: var(--jerf-color); }
         .section-header.safi  { background: var(--safi-color); }
         .section-header.total { background: var(--total-color); }
-
-        /* Buttons */
         .stDownloadButton>button {
-            background-color: var(--ocp-green) !important;
-            color: white !important;
-            border-radius: 8px !important;
-            border: none !important;
-            font-family: 'Barlow', sans-serif !important;
-            font-weight: 600 !important;
+            background-color: var(--ocp-green) !important; color: white !important;
+            border-radius: 8px !important; border: none !important;
+            font-family: 'Barlow', sans-serif !important; font-weight: 600 !important;
         }
-        [data-testid="stSidebar"] {
-            border-right: 3px solid var(--ocp-green);
-            background: #FAFFF9;
-        }
+        [data-testid="stSidebar"] { border-right: 3px solid var(--ocp-green); background: #FAFFF9; }
         hr { border-color: #D0E8D9 !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -82,8 +57,7 @@ st.markdown("""
 def force_nombre(valeur):
     if pd.isna(valeur): return 0.0
     if isinstance(valeur, (int, float)):
-        if abs(valeur) < 1e-6: return 0.0
-        return float(valeur)
+        return 0.0 if abs(valeur) < 1e-6 else float(valeur)
     s = str(valeur).strip()
     if s in ("-", "", "nan"): return 0.0
     nettoye = re.sub(r'[^\d]', '', s.replace("\xa0", "").replace(" ", ""))
@@ -112,24 +86,20 @@ def generate_word(df_result, titre, periode):
     doc.save(bio)
     return bio.getvalue()
 
-def export_buttons(df, prefix, titre, periode):
+def export_buttons(df, prefix, titre, periode, key_suffix=""):
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button(
-            f"⬇️ CSV — {prefix}",
-            df.to_csv(index=False).encode('utf-8'),
-            file_name=f"{prefix}_{periode}.csv",
-            mime="text/csv"
-        )
+        st.download_button(f"⬇️ CSV — {prefix}", df.to_csv(index=False).encode('utf-8'),
+                           file_name=f"{prefix}_{periode}.csv", mime="text/csv",
+                           key=f"csv_{key_suffix}")
     with c2:
-        st.download_button(
-            f"⬇️ Word — {prefix}",
-            generate_word(df, titre, periode),
-            file_name=f"{prefix}_{periode}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        st.download_button(f"⬇️ Word — {prefix}", generate_word(df, titre, periode),
+                           file_name=f"{prefix}_{periode}.docx",
+                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                           key=f"word_{key_suffix}")
 
-def extract_mois(date_str):
+def extract_mois_label(date_str):
+    """dd/mm/yyyy → 'Jan 2026'"""
     try:
         parts = str(date_str).split("/")
         if len(parts) == 3:
@@ -141,6 +111,25 @@ def extract_mois(date_str):
         pass
     return "Inconnu"
 
+def normalise_sheet_name(name):
+    """Normalise un nom de feuille pour la comparaison : minuscules, sans accents simples, sans espaces."""
+    n = name.strip().lower()
+    replacements = {"é":"e","è":"e","ê":"e","à":"a","â":"a","û":"u","ô":"o","î":"i","ç":"c"}
+    for k, v in replacements.items():
+        n = n.replace(k, v)
+    return n
+
+# Mots-clés qui indiquent une feuille de données mensuelles valides
+# On inclut tout sauf les feuilles récap (TOTAL, RECAP, ANNEE, etc.)
+SKIP_KEYWORDS = ["total", "recap", "recapitulatif", "annee", "annuel", "bilan", "synthese", "summary"]
+
+def is_data_sheet(name):
+    norm = normalise_sheet_name(name)
+    for kw in SKIP_KEYWORDS:
+        if kw in norm:
+            return False
+    return True
+
 # ─── HEADER ──────────────────────────────────────────────────────────────────
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
@@ -149,7 +138,7 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
-    st.title("Suivi de la Production MFS")
+    st.title("Suivi de la Production MFS 26")
     st.markdown("##### Reporting Consolidé — Jerf Lasfar & Safi • JPH 2026")
 
 st.divider()
@@ -157,7 +146,7 @@ st.divider()
 # ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 st.sidebar.header("📂 Chargement des fichiers")
 file_jerf = st.sidebar.file_uploader("🏭 Fichier Jerf (Reporting-JPH 2026)", type=["xlsx"], key="jerf")
-file_safi = st.sidebar.file_uploader("🏗️ Fichier Safi (Suivi Production MFS)", type=["xlsx"], key="safi")
+file_safi = st.sidebar.file_uploader("🏗️ Fichier Safi (Suivi Production MFS 26)", type=["xlsx"], key="safi")
 
 # ─── PARSE JERF ──────────────────────────────────────────────────────────────
 jerf_df = None
@@ -187,30 +176,98 @@ if file_jerf:
         st.sidebar.error(f"Erreur Jerf : {e}")
 
 # ─── PARSE SAFI ──────────────────────────────────────────────────────────────
+# Structure : chaque feuille = 1 mois
+#   - Ligne 7 (index 6) = 1er jour du mois
+#   - Colonne A (index 0) = numéro du jour
+#   - Colonne AF (index 31) = TSP Export
+#   - Colonne AG (index 32) = TSP ML
+
 safi_df = None
+safi_debug = []
+
 if file_safi:
     try:
         xl = pd.ExcelFile(file_safi)
-        COL_TSP_EXP, COL_TSP_ML, START_ROW = 31, 32, 6
+        all_sheets = xl.sheet_names
+
+        # Debug : afficher les feuilles trouvées dans la sidebar
+        st.sidebar.markdown("**Feuilles détectées (Safi) :**")
+        st.sidebar.caption(" | ".join(all_sheets))
+
+        COL_TSP_EXP = 31   # AF (0-indexed)
+        COL_TSP_ML  = 32   # AG (0-indexed)
+        START_ROW   = 6    # ligne 7 → index 6
+
         rows = []
-        for sheet in xl.sheet_names:
-            dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None)
-            if dfs.shape[1] <= COL_TSP_ML:
+        for sheet in all_sheets:
+            if not is_data_sheet(sheet):
                 continue
-            for ri in range(START_ROW, len(dfs)):
+
+            dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None)
+
+            # Si le fichier n'a pas assez de colonnes, essayer de chercher TSP Export/ML par en-tête
+            tsp_exp_col = COL_TSP_EXP
+            tsp_ml_col  = COL_TSP_ML
+
+            if dfs.shape[1] <= COL_TSP_ML:
+                # Chercher les colonnes par nom dans les premières lignes
+                found = False
+                for hrow in range(min(8, len(dfs))):
+                    row_vals = [str(v).strip().upper() for v in dfs.iloc[hrow]]
+                    for ci, v in enumerate(row_vals):
+                        if "TSP" in v and "EXPORT" in v:
+                            tsp_exp_col = ci; found = True
+                        if "TSP" in v and "ML" in v:
+                            tsp_ml_col = ci
+                if not found:
+                    safi_debug.append(f"⚠️ {sheet} : colonnes AF/AG absentes et entêtes TSP non trouvés — ignorée")
+                    continue
+
+            # Chercher la ligne de début (1er jour = cellule A contenant 1)
+            start = START_ROW
+            for ri in range(START_ROW, min(START_ROW + 5, len(dfs))):
+                try:
+                    val = int(float(str(dfs.iloc[ri, 0]).strip()))
+                    if val == 1:
+                        start = ri
+                        break
+                except:
+                    pass
+
+            nb_lignes = 0
+            for ri in range(start, len(dfs)):
                 jour_val = dfs.iloc[ri, 0]
-                if pd.isna(jour_val) or str(jour_val).strip() in ("", "nan", "Total", "TOTAL"):
+                if pd.isna(jour_val) or str(jour_val).strip() in ("", "nan", "Total", "TOTAL", "Cumul", "CUMUL"):
                     continue
                 try:
                     jour_num = int(float(str(jour_val).strip()))
                 except ValueError:
                     continue
-                tsp_exp = force_nombre(dfs.iloc[ri, COL_TSP_EXP])
-                tsp_ml  = force_nombre(dfs.iloc[ri, COL_TSP_ML])
-                rows.append({"Mois": sheet, "Jour": jour_num,
-                             "TSP Export": tsp_exp, "TSP ML": tsp_ml,
-                             "TOTAL Safi": tsp_exp + tsp_ml})
+                if jour_num < 1 or jour_num > 31:
+                    continue
+
+                tsp_exp = force_nombre(dfs.iloc[ri, tsp_exp_col]) if tsp_exp_col < dfs.shape[1] else 0.0
+                tsp_ml  = force_nombre(dfs.iloc[ri, tsp_ml_col])  if tsp_ml_col  < dfs.shape[1] else 0.0
+
+                rows.append({
+                    "Mois":       sheet,
+                    "Jour":       jour_num,
+                    "Date Safi":  f"{jour_num:02d} — {sheet}",
+                    "TSP Export": tsp_exp,
+                    "TSP ML":     tsp_ml,
+                    "TOTAL Safi": tsp_exp + tsp_ml
+                })
+                nb_lignes += 1
+
+            safi_debug.append(f"✅ {sheet} : {nb_lignes} jours lus (cols {tsp_exp_col}/{tsp_ml_col})")
+
         safi_df = pd.DataFrame(rows) if rows else None
+
+        # Affichage debug dans sidebar (dépliable)
+        with st.sidebar.expander("🔍 Détail lecture Safi"):
+            for d in safi_debug:
+                st.sidebar.caption(d)
+
     except Exception as e:
         st.sidebar.error(f"Erreur Safi : {e}")
 
@@ -237,7 +294,6 @@ cumul_total = cumul_jerf + cumul_safi
 
 # ─── KPI CARDS ───────────────────────────────────────────────────────────────
 st.markdown("### 📌 Cumul à Date — Toute la Période")
-
 c1, c2, c3 = st.columns(3)
 with c1:
     sub1 = "Export Engrais + Camions + VL" if jerf_df is not None else "⚠️ Fichier non chargé"
@@ -281,7 +337,7 @@ if jerf_df is not None:
             "TOTAL Jerf":     st.column_config.NumberColumn("TOTAL Jerf ✅",  format="%d"),
         }
     )
-    export_buttons(show_jerf, "Jerf", "Rapport Jerf Lasfar", choix_jerf)
+    export_buttons(show_jerf, "Jerf", "Rapport Jerf Lasfar", choix_jerf, "jerf")
     if choix_jerf == "Toutes" and len(jerf_df) > 1:
         st.line_chart(jerf_df.set_index("Date")["TOTAL Jerf"], color="#00843D")
 else:
@@ -290,46 +346,88 @@ else:
 st.divider()
 
 # ─── SECTION SAFI ────────────────────────────────────────────────────────────
-st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP ML</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP ML (par Jour)</div>', unsafe_allow_html=True)
 
 if safi_df is not None:
     show_safi = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
+
+    # Tableau par jour
+    display_safi = show_safi[["Mois", "Jour", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
+
+    # Ligne total par mois
+    if choix_safi == "Tous":
+        totaux = show_safi.groupby("Mois")[["TSP Export", "TSP ML", "TOTAL Safi"]].sum().reset_index()
+        totaux.insert(1, "Jour", "— TOTAL —")
+        totaux["Jour"] = totaux["Jour"].astype(str)
+        display_safi["Jour"] = display_safi["Jour"].astype(str)
+        display_safi = pd.concat([display_safi, totaux], ignore_index=True).sort_values(
+            by=["Mois"], kind="stable"
+        )
+    else:
+        # Ajouter une ligne total en bas
+        total_row = pd.DataFrame([{
+            "Mois": f"🔢 TOTAL {choix_safi}",
+            "Jour": "—",
+            "TSP Export": show_safi["TSP Export"].sum(),
+            "TSP ML":     show_safi["TSP ML"].sum(),
+            "TOTAL Safi": show_safi["TOTAL Safi"].sum()
+        }])
+        display_safi["Jour"] = display_safi["Jour"].astype(str)
+        display_safi = pd.concat([display_safi, total_row], ignore_index=True)
+
     st.dataframe(
-        show_safi, use_container_width=True, hide_index=True,
-        height=min(500, 45 + 35 * len(show_safi)),
+        display_safi, use_container_width=True, hide_index=True,
+        height=min(600, 45 + 35 * len(display_safi)),
         column_config={
             "Mois":       st.column_config.TextColumn("Mois"),
-            "Jour":       st.column_config.NumberColumn("Jour",       format="%d"),
+            "Jour":       st.column_config.TextColumn("Jour"),
             "TSP Export": st.column_config.NumberColumn("TSP Export", format="%d"),
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
         }
     )
-    export_buttons(show_safi, "Safi", "Rapport Safi TSP", choix_safi)
+    export_buttons(show_safi[["Mois","Jour","TSP Export","TSP ML","TOTAL Safi"]],
+                   "Safi", "Rapport Safi TSP", choix_safi, "safi")
+
+    # Graphique
     if len(show_safi) > 1:
         chart_df = show_safi.copy()
         chart_df["Label"] = chart_df["Mois"].astype(str) + "-J" + chart_df["Jour"].astype(str)
         st.line_chart(chart_df.set_index("Label")[["TSP Export", "TSP ML"]])
 else:
-    st.info("⬅️ Chargez le fichier **SUIVI DE LA PRODUCTION MFS** dans la barre latérale pour voir les données Safi.")
+    st.info("⬅️ Chargez le fichier **SUIVI DE LA PRODUCTION MFS 26** dans la barre latérale pour voir les données Safi.")
 
 st.divider()
 
 # ─── SECTION TOTAL ───────────────────────────────────────────────────────────
-st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + Safi par Mois</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + Safi par Jour</div>', unsafe_allow_html=True)
 
 if jerf_df is not None or safi_df is not None:
+
+    # Jerf : par jour (date)
     if jerf_df is not None:
-        jdf = jerf_df.copy()
-        jdf["Mois"] = jdf["Date"].apply(extract_mois)
-        j_mois = jdf.groupby("Mois")["TOTAL Jerf"].sum().reset_index()
-        j_mois.columns = ["Mois", "TOTAL Jerf"]
+        j_jour = jerf_df[["Date", "TOTAL Jerf"]].copy()
+        j_jour.rename(columns={"Date": "Jour"}, inplace=True)
+    else:
+        j_jour = pd.DataFrame(columns=["Jour", "TOTAL Jerf"])
+
+    # Safi : par jour (Mois + Jour combiné)
+    if safi_df is not None:
+        s_jour = safi_df[["Date Safi", "TOTAL Safi"]].copy()
+        s_jour.rename(columns={"Date Safi": "Jour"}, inplace=True)
+    else:
+        s_jour = pd.DataFrame(columns=["Jour", "TOTAL Safi"])
+
+    # ── Total par mois ─────────────────────────────────────────────────────
+    if jerf_df is not None:
+        jdf2 = jerf_df.copy()
+        jdf2["Mois"] = jdf2["Date"].apply(extract_mois_label)
+        j_mois = jdf2.groupby("Mois")["TOTAL Jerf"].sum().reset_index()
     else:
         j_mois = pd.DataFrame(columns=["Mois", "TOTAL Jerf"])
 
     if safi_df is not None:
         s_mois = safi_df.groupby("Mois")["TOTAL Safi"].sum().reset_index()
-        s_mois.columns = ["Mois", "TOTAL Safi"]
     else:
         s_mois = pd.DataFrame(columns=["Mois", "TOTAL Safi"])
 
@@ -342,6 +440,7 @@ if jerf_df is not None or safi_df is not None:
 
     tot["TOTAL Jerf+Safi"] = tot["TOTAL Jerf"] + tot["TOTAL Safi"]
 
+    # Ligne total général
     total_row = pd.DataFrame([{
         "Mois": "🔢 TOTAL GÉNÉRAL",
         "TOTAL Jerf":      tot["TOTAL Jerf"].sum(),
@@ -359,11 +458,13 @@ if jerf_df is not None or safi_df is not None:
             "TOTAL Jerf+Safi": st.column_config.NumberColumn("Total Jerf+Safi", format="%d"),
         }
     )
-    export_buttons(disp, "Total_Consolide", "Rapport Total Jerf + Safi", "Consolidé")
+    export_buttons(disp, "Total_Consolide", "Rapport Total Jerf + Safi", "Consolidé", "total")
+
     if len(tot) > 1:
         st.bar_chart(tot.set_index("Mois")[["TOTAL Jerf", "TOTAL Safi"]])
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
