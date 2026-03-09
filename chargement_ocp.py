@@ -312,15 +312,10 @@ else:
     choix_jerf = "Toutes"
 
 if safi_df is not None:
-    mois_safi   = ["Tous"] + list(safi_df["Mois"].unique())
-    choix_safi  = st.sidebar.selectbox("📅 Mois Safi", mois_safi)
-    # Filtre par jour — disponible quel que soit le mois sélectionné
-    df_pour_jours = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
-    jours_dispo = ["Tous"] + [str(j) for j in sorted(df_pour_jours["Jour"].unique().tolist())]
-    choix_jour_safi = st.sidebar.selectbox("📆 Jour Safi", jours_dispo, key="jour_safi_select")
+    dates_safi = ["Toutes"] + list(safi_df["Date"].unique())
+    choix_date_safi = st.sidebar.selectbox("📅 Date Safi", dates_safi)
 else:
-    choix_safi      = "Tous"
-    choix_jour_safi = "Tous"
+    choix_date_safi = "Toutes"
 
 # ─── CUMULS ──────────────────────────────────────────────────────────────────
 cumul_jerf  = float(jerf_df["TOTAL Jerf"].sum()) if jerf_df is not None else 0.0
@@ -384,26 +379,15 @@ st.divider()
 st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP ML (par Jour)</div>', unsafe_allow_html=True)
 
 if safi_df is not None:
-    # Filtrage mois puis jour
-    show_safi = safi_df.copy()
-    if choix_safi != "Tous":
-        show_safi = show_safi[show_safi["Mois"] == choix_safi]
-    if choix_jour_safi != "Tous":
-        show_safi = show_safi[show_safi["Jour"] == int(choix_jour_safi)]
+    # Filtrage par date
+    show_safi = safi_df.copy() if choix_date_safi == "Toutes" else safi_df[safi_df["Date"] == choix_date_safi].copy()
 
-    # Tableau affiché
-    display_safi = show_safi[["Mois", "Jour", "Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
+    # Tableau affiché — uniquement Date + TSP Export + TSP ML + TOTAL
+    display_safi = show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
 
-    # Lignes total par mois si vue globale
-    if choix_safi == "Tous":
-        totaux_mois = show_safi.groupby("Mois")[["TSP Export", "TSP ML", "TOTAL Safi"]].sum().reset_index()
-        totaux_mois.insert(1, "Jour", "—")
-        totaux_mois.insert(2, "Date", totaux_mois["Mois"].apply(lambda m: f"TOTAL {m}"))
-        display_safi = pd.concat([display_safi, totaux_mois], ignore_index=True)
-
-    # Ligne grand total toujours en bas
+    # Ligne grand total en bas
     grand_total = pd.DataFrame([{
-        "Mois": "TOTAL GENERAL", "Jour": "—", "Date": "—",
+        "Date":       "TOTAL GENERAL",
         "TSP Export": show_safi["TSP Export"].sum(),
         "TSP ML":     show_safi["TSP ML"].sum(),
         "TOTAL Safi": show_safi["TOTAL Safi"].sum()
@@ -414,20 +398,17 @@ if safi_df is not None:
         display_safi, use_container_width=True, hide_index=True,
         height=min(600, 45 + 35 * len(display_safi)),
         column_config={
-            "Mois":       st.column_config.TextColumn("Mois"),
-            "Jour":       st.column_config.TextColumn("Jour"),
             "Date":       st.column_config.TextColumn("Date"),
             "TSP Export": st.column_config.NumberColumn("TSP Export", format="%d"),
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
         }
     )
-    label_export = f"{choix_safi}_J{choix_jour_safi}" if choix_jour_safi != "Tous" else choix_safi
-    export_buttons(show_safi[["Mois", "Jour", "Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
-                   "Safi", "Rapport Safi TSP", label_export, "safi")
+    export_buttons(show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
+                   "Safi", "Rapport Safi TSP", choix_date_safi, "safi")
 
-    # Graphique (seulement si plusieurs lignes et pas filtré sur 1 jour)
-    if len(show_safi) > 1 and choix_jour_safi == "Tous":
+    # Graphique si plusieurs lignes
+    if len(show_safi) > 1:
         st.line_chart(show_safi.set_index("Date")[["TSP Export", "TSP ML"]])
 else:
     st.info("⬅️ Chargez le fichier **SUIVI DE LA PRODUCTION MFS 26** dans la barre latérale pour voir les données Safi.")
@@ -523,6 +504,7 @@ if jerf_df is not None or safi_df is not None:
 
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
