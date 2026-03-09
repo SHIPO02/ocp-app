@@ -5,7 +5,7 @@ import os
 import io
 from docx import Document
 
-st.set_page_config(page_title="OCP - Suivi Production MFS", layout="wide", page_icon="🚢")
+st.set_page_config(page_title="OCP - Suivi chargement Export", layout="wide", page_icon="🚢")
 
 st.markdown("""
     <style>
@@ -87,12 +87,9 @@ def generate_word(df_result, titre, periode):
     return bio.getvalue()
 
 def export_buttons(df, prefix, titre, periode, key_suffix=""):
-    c1, c2 = st.columns(2)
+    c1= st.columns(2)
+
     with c1:
-        st.download_button(f"⬇️ CSV — {prefix}", df.to_csv(index=False).encode('utf-8'),
-                           file_name=f"{prefix}_{periode}.csv", mime="text/csv",
-                           key=f"csv_{key_suffix}")
-    with c2:
         st.download_button(f"⬇️ Word — {prefix}", generate_word(df, titre, periode),
                            file_name=f"{prefix}_{periode}.docx",
                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -138,7 +135,7 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
-    st.title("Suivi de la Production MFS 26")
+    st.title("Suivi chargement exort")
     st.markdown("##### Reporting Consolidé — Jerf Lasfar & Safi • JPH 2026")
 
 st.divider()
@@ -377,7 +374,7 @@ cumul_safi  = float(safi_df["TOTAL Safi"].sum()) if safi_df is not None else 0.0
 cumul_total = cumul_jerf + cumul_safi
 
 # ─── KPI CARDS ───────────────────────────────────────────────────────────────
-st.markdown("### 📌 Cumul à Date — Toute la Période")
+st.markdown("###  Cumul à Date — Toute la Période")
 c1, c2, c3 = st.columns(3)
 with c1:
     sub1 = "Export Engrais + Camions + VL" if jerf_df is not None else "⚠️ Fichier non chargé"
@@ -418,7 +415,7 @@ if jerf_df is not None:
             "Export Engrais": st.column_config.NumberColumn("Export Engrais", format="%d"),
             "Export Camions": st.column_config.NumberColumn("Export Camions", format="%d"),
             "VL Camions":     st.column_config.NumberColumn("VL Camions",     format="%d"),
-            "TOTAL Jerf":     st.column_config.NumberColumn("TOTAL Jerf ✅",  format="%d"),
+            "TOTAL Jerf":     st.column_config.NumberColumn("TOTAL Jerf ",  format="%d"),
         }
     )
     label_jerf = ", ".join(sel_jerf) if sel_jerf else "Toutes"
@@ -456,7 +453,7 @@ if safi_df is not None:
             "Date":       st.column_config.TextColumn("Date"),
             "TSP Export": st.column_config.NumberColumn("TSP Export", format="%d"),
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
-            "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
+            "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ", format="%d"),
         }
     )
     label_safi = ", ".join(sel_safi) if sel_safi else "Toutes"
@@ -571,6 +568,7 @@ if jerf_df is not None or safi_df is not None:
 
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
