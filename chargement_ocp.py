@@ -311,10 +311,15 @@ else:
     choix_jerf = "Toutes"
 
 if safi_df is not None:
-    mois_safi  = ["Tous"] + list(safi_df["Mois"].unique())
-    choix_safi = st.sidebar.selectbox("📅 Mois Safi", mois_safi)
+    mois_safi   = ["Tous"] + list(safi_df["Mois"].unique())
+    choix_safi  = st.sidebar.selectbox("📅 Mois Safi", mois_safi)
+    # Filtre par jour — disponible quel que soit le mois sélectionné
+    df_pour_jours = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
+    jours_dispo = ["Tous"] + [str(j) for j in sorted(df_pour_jours["Jour"].unique().tolist())]
+    choix_jour_safi = st.sidebar.selectbox("📆 Jour Safi", jours_dispo)
 else:
-    choix_safi = "Tous"
+    choix_safi      = "Tous"
+    choix_jour_safi = "Tous"
 
 # ─── CUMULS ──────────────────────────────────────────────────────────────────
 cumul_jerf  = float(jerf_df["TOTAL Jerf"].sum()) if jerf_df is not None else 0.0
@@ -378,21 +383,27 @@ st.divider()
 st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP ML (par Jour)</div>', unsafe_allow_html=True)
 
 if safi_df is not None:
-    show_safi = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
+    # Filtrage mois puis jour
+    if choix_safi == "Tous":
+        show_safi = safi_df.copy()
+    else:
+        show_safi = safi_df[safi_df["Mois"] == choix_safi].copy()
+        if choix_jour_safi != "Tous":
+            show_safi = show_safi[show_safi["Jour"] == int(choix_jour_safi)]
 
-    # Tableau par jour avec date complète dd/mm/yyyy
-    display_safi = show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
+    # Tableau affiché
+    display_safi = show_safi[["Mois", "Jour", "Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
 
-    # Lignes total par mois si tous les mois affichés
+    # Lignes total par mois si vue globale
     if choix_safi == "Tous":
         totaux_mois = show_safi.groupby("Mois")[["TSP Export", "TSP ML", "TOTAL Safi"]].sum().reset_index()
-        totaux_mois["Date"] = totaux_mois["Mois"].apply(lambda m: f"🔢 TOTAL — {m}")
-        totaux_mois = totaux_mois[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]]
+        totaux_mois.insert(1, "Jour", "—")
+        totaux_mois.insert(2, "Date", totaux_mois["Mois"].apply(lambda m: f"TOTAL {m}"))
         display_safi = pd.concat([display_safi, totaux_mois], ignore_index=True)
 
     # Ligne grand total toujours en bas
     grand_total = pd.DataFrame([{
-        "Date":       "🔢 TOTAL GÉNÉRAL",
+        "Mois": "TOTAL GENERAL", "Jour": "—", "Date": "—",
         "TSP Export": show_safi["TSP Export"].sum(),
         "TSP ML":     show_safi["TSP ML"].sum(),
         "TOTAL Safi": show_safi["TOTAL Safi"].sum()
@@ -403,17 +414,20 @@ if safi_df is not None:
         display_safi, use_container_width=True, hide_index=True,
         height=min(600, 45 + 35 * len(display_safi)),
         column_config={
+            "Mois":       st.column_config.TextColumn("Mois"),
+            "Jour":       st.column_config.TextColumn("Jour"),
             "Date":       st.column_config.TextColumn("Date"),
             "TSP Export": st.column_config.NumberColumn("TSP Export", format="%d"),
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
         }
     )
-    export_buttons(show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
-                   "Safi", "Rapport Safi TSP", choix_safi, "safi")
+    label_export = f"{choix_safi}_J{choix_jour_safi}" if choix_jour_safi != "Tous" else choix_safi
+    export_buttons(show_safi[["Mois", "Jour", "Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
+                   "Safi", "Rapport Safi TSP", label_export, "safi")
 
-    # Graphique
-    if len(show_safi) > 1:
+    # Graphique (seulement si plusieurs lignes et pas filtré sur 1 jour)
+    if len(show_safi) > 1 and choix_jour_safi == "Tous":
         st.line_chart(show_safi.set_index("Date")[["TSP Export", "TSP ML"]])
 else:
     st.info("⬅️ Chargez le fichier **SUIVI DE LA PRODUCTION MFS 26** dans la barre latérale pour voir les données Safi.")
@@ -425,57 +439,91 @@ st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + 
 
 if jerf_df is not None or safi_df is not None:
 
-    # ── Total par mois Jerf ────────────────────────────────────────────────
+    # ── Tableau par jour : fusion Jerf + Safi sur la date dd/mm/yyyy ──────
     if jerf_df is not None:
-        jdf2 = jerf_df.copy()
-        jdf2["Mois"] = jdf2["Date"].apply(extract_mois_label)
-        j_mois = jdf2.groupby("Mois")["TOTAL Jerf"].sum().reset_index()
+        j_day = jerf_df[["Date", "TOTAL Jerf"]].copy()
     else:
-        j_mois = pd.DataFrame(columns=["Mois", "TOTAL Jerf"])
+        j_day = pd.DataFrame(columns=["Date", "TOTAL Jerf"])
 
-    # ── Total par mois Safi ────────────────────────────────────────────────
     if safi_df is not None:
-        s_mois = safi_df.groupby("Mois")["TOTAL Safi"].sum().reset_index()
+        s_day = safi_df[["Date", "TOTAL Safi"]].copy()
     else:
-        s_mois = pd.DataFrame(columns=["Mois", "TOTAL Safi"])
+        s_day = pd.DataFrame(columns=["Date", "TOTAL Safi"])
 
-    # ── Fusion ────────────────────────────────────────────────────────────
-    if jerf_df is not None and safi_df is not None:
-        tot = pd.merge(j_mois, s_mois, on="Mois", how="outer").fillna(0)
-    elif jerf_df is not None:
-        tot = j_mois.copy(); tot["TOTAL Safi"] = 0.0
+    # Merge sur la date — outer pour garder tous les jours
+    if not j_day.empty and not s_day.empty:
+        day_df = pd.merge(j_day, s_day, on="Date", how="outer").fillna(0)
+    elif not j_day.empty:
+        day_df = j_day.copy(); day_df["TOTAL Safi"] = 0.0
     else:
-        tot = s_mois.copy(); tot["TOTAL Jerf"] = 0.0
+        day_df = s_day.copy(); day_df["TOTAL Jerf"] = 0.0
 
-    tot["TOTAL Jerf+Safi"] = tot["TOTAL Jerf"] + tot["TOTAL Safi"]
+    day_df["TOTAL Jerf+Safi"] = day_df["TOTAL Jerf"] + day_df["TOTAL Safi"]
+
+    # Tri chronologique
+    def date_sort_key(d):
+        try:
+            parts = str(d).split("/")
+            return (int(parts[2]), int(parts[1]), int(parts[0]))
+        except:
+            return (9999, 99, 99)
+
+    day_df["_sort"] = day_df["Date"].apply(date_sort_key)
+    day_df = day_df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
     # Ligne total général
     total_row = pd.DataFrame([{
-        "Mois":            "TOTAL GENERAL",
-        "TOTAL Jerf":      tot["TOTAL Jerf"].sum(),
-        "TOTAL Safi":      tot["TOTAL Safi"].sum(),
-        "TOTAL Jerf+Safi": tot["TOTAL Jerf+Safi"].sum()
+        "Date":            "TOTAL GENERAL",
+        "TOTAL Jerf":      day_df["TOTAL Jerf"].sum(),
+        "TOTAL Safi":      day_df["TOTAL Safi"].sum(),
+        "TOTAL Jerf+Safi": day_df["TOTAL Jerf+Safi"].sum()
     }])
-    disp = pd.concat([tot, total_row], ignore_index=True)
+    disp_day = pd.concat([day_df, total_row], ignore_index=True)
 
     st.dataframe(
-        disp, use_container_width=True, hide_index=True,
+        disp_day, use_container_width=True, hide_index=True,
+        height=min(600, 45 + 35 * len(disp_day)),
         column_config={
-            "Mois":            st.column_config.TextColumn("Mois"),
+            "Date":            st.column_config.TextColumn("Date"),
             "TOTAL Jerf":      st.column_config.NumberColumn("Total Jerf",      format="%d"),
             "TOTAL Safi":      st.column_config.NumberColumn("Total Safi",      format="%d"),
             "TOTAL Jerf+Safi": st.column_config.NumberColumn("Total Jerf+Safi", format="%d"),
         }
     )
-    export_buttons(disp, "Total_Consolide", "Rapport Total Jerf + Safi", "Consolide", "total")
+    export_buttons(disp_day, "Total_Consolide_Jour", "Rapport Total Jerf+Safi par Jour", "Consolide", "total_jour")
 
-    # ── Graphique consolidé par mois ──────────────────────────────────────
-    if len(tot) > 0:
-        st.markdown("#### Evolution mensuelle — Jerf vs Safi vs Total")
-        chart_cols = [c for c in ["TOTAL Jerf", "TOTAL Safi", "TOTAL Jerf+Safi"] if c in tot.columns]
-        st.bar_chart(tot.set_index("Mois")[chart_cols])
+    # ── Histogramme par MOIS (Jan/Fév/Mars uniquement les mois présents) ──
+    st.markdown("#### 📊 Evolution mensuelle — Jerf vs Safi")
+
+    # Construire mois à partir des dates du tableau journalier
+    chart_df = day_df.copy()
+    chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
+    chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
+    mois_tot = chart_df.groupby("Mois")[["TOTAL Jerf", "TOTAL Safi"]].sum().reset_index()
+
+    # Trier les mois chronologiquement
+    def mois_sort_key(m):
+        noms = {"Jan":1,"Fév":2,"Mar":3,"Avr":4,"Mai":5,"Jun":6,
+                "Jul":7,"Aoû":8,"Sep":9,"Oct":10,"Nov":11,"Déc":12}
+        try:
+            parts = m.split()
+            return (int(parts[1]), noms.get(parts[0], 99))
+        except:
+            return (9999, 99)
+
+    mois_tot["_sort"] = mois_tot["Mois"].apply(mois_sort_key)
+    mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+    # Garder uniquement mois avec au moins une valeur non nulle
+    mois_tot = mois_tot[(mois_tot["TOTAL Jerf"] > 0) | (mois_tot["TOTAL Safi"] > 0)]
+
+    if len(mois_tot) > 0:
+        st.bar_chart(mois_tot.set_index("Mois")[["TOTAL Jerf", "TOTAL Safi"]])
+    else:
+        st.info("Pas encore de données pour le graphique mensuel.")
+
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
