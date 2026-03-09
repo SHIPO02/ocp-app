@@ -8,20 +8,20 @@ st.set_page_config(page_title="OCP - Suivi chargement Export", layout="wide", pa
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&display=swap');
-        :root { --ocp-green: #00843D; --ocp-dark: #005C2A; --jerf-color: #00843D; --safi-color: #1A6FA8; --total-color: #C05A00; }
+        :root { --ocp-green: #00843D; --ocp-dark: #005C2A; --jorf-color: #00843D; --safi-color: #1A6FA8; --total-color: #C05A00; }
         html, body, [class*="css"] { font-family: 'Barlow', sans-serif; }
         .stApp { background-color: #F4F7F5; }
         h1, h2, h3 { color: var(--ocp-dark) !important; font-family: 'Barlow Condensed', sans-serif !important; }
         .kpi-card { border-radius: 12px; padding: 20px 24px; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden; }
         .kpi-card::before { content: ''; position: absolute; top: -20px; right: -20px; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.1); }
-        .kpi-card.jerf  { background: linear-gradient(135deg, #00843D, #005C2A); }
+        .kpi-card.jorf  { background: linear-gradient(135deg, #00843D, #005C2A); }
         .kpi-card.safi  { background: linear-gradient(135deg, #1A6FA8, #0D4A73); }
         .kpi-card.total { background: linear-gradient(135deg, #C05A00, #8A3F00); }
         .kpi-label { font-size: 12px; font-weight: 600; opacity: 0.85; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
         .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 700; line-height: 1; }
         .kpi-sub   { font-size: 11px; opacity: 0.7; margin-top: 4px; }
         .section-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; margin: 20px 0 10px 0; font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: white; }
-        .section-header.jerf  { background: var(--jerf-color); }
+        .section-header.jorf  { background: var(--jorf-color); }
         .section-header.safi  { background: var(--safi-color); }
         .section-header.total { background: var(--total-color); }
         [data-testid="stSidebar"] { border-right: 3px solid var(--ocp-green); background: #FAFFF9; }
@@ -46,6 +46,13 @@ def force_nombre(valeur):
 
 def fmt_number(n):
     return f"{int(n):,}".replace(",", " ")
+
+def copier_ligne_btn(df, total_col, label, key):
+    """Affiche les valeurs de total_col (sans la ligne TOTAL GENERAL) sous forme copiable en ligne."""
+    vals = df[df["Date"] != "TOTAL GENERAL"][total_col].dropna().tolist()
+    ligne_txt = "\t".join(str(int(v)) for v in vals)
+    st.text_area(f"📋 {label} — Coller en ligne (Ctrl+A puis Ctrl+C)",
+                 value=ligne_txt, height=68, key=key)
 
 def extract_mois_label(date_str):
     try:
@@ -80,20 +87,20 @@ with col_logo:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
     st.title("Suivi chargement export")
-    st.markdown("##### Reporting Consolidé — Jerf Lasfar & Safi")
+    st.markdown("##### Reporting Consolidé — Jorf Lasfar & Safi")
 
 st.divider()
 
 # ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 st.sidebar.header("📂 Chargement des fichiers")
-file_jerf = st.sidebar.file_uploader("🏭 Fichier Jerf", type=["xlsx"], key="jerf")
+file_jorf = st.sidebar.file_uploader("🏭 Fichier Jorf", type=["xlsx"], key="jorf")
 file_safi = st.sidebar.file_uploader("🏗️ Fichier Safi", type=["xlsx"], key="safi")
 
-# ─── PARSE JERF ──────────────────────────────────────────────────────────────
-jerf_df = None
-if file_jerf:
+# ─── PARSE JORF ──────────────────────────────────────────────────────────────
+jorf_df = None
+if file_jorf:
     try:
-        df_raw = pd.read_excel(file_jerf, sheet_name='EXPORT', header=None)
+        df_raw = pd.read_excel(file_jorf, sheet_name='EXPORT', header=None)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
         for r in range(len(df_raw)):
             lbl = " ".join(df_raw.iloc[r, 0:3].astype(str)).upper()
@@ -110,17 +117,17 @@ if file_jerf:
             v2 = force_nombre(df_raw.iloc[coords["CAMIONS"], j]) if coords["CAMIONS"] is not None else 0.0
             v3 = force_nombre(df_raw.iloc[coords["VL"], j])      if coords["VL"] is not None else 0.0
             rows.append({"Date": dl, "Export Engrais": v1, "Export Camions": v2,
-                         "VL Camions": v3, "TOTAL Jerf": v1 + v2 + v3})
-        jerf_df = pd.DataFrame(rows)
+                         "VL Camions": v3, "TOTAL Jorf": v1 + v2 + v3})
+        jorf_df = pd.DataFrame(rows)
     except Exception as e:
-        st.sidebar.error(f"Erreur Jerf : {e}")
+        st.sidebar.error(f"Erreur Jorf : {e}")
 
 # ─── PARSE RADE (Sit Navire) ─────────────────────────────────────────────────
 rade_df = None
-if file_jerf:
+if file_jorf:
     try:
         # Feuille "Sit Navire" — col B (index 1) = Date, col D (index 3) = Engrais en attente
-        df_rade = pd.read_excel(file_jerf, sheet_name='Sit Navire', header=None)
+        df_rade = pd.read_excel(file_jorf, sheet_name='Sit Navire', header=None)
         rows_rade = []
         for r in range(len(df_rade)):
             date_val = df_rade.iloc[r, 1]   # colonne B
@@ -224,11 +231,11 @@ def filtre_dates_sidebar(df, label_prefix, key_prefix, date_col="Date"):
                            key=lambda d: tuple(int(x) for x in str(d).split("/"))[::-1])
         return st.sidebar.multiselect(f"Dates {label_prefix}", all_dates, key=f"{key_prefix}_dates")
 
-if jerf_df is not None:
-    st.sidebar.markdown("**🏭 Jerf Lasfar**")
-    sel_jerf = filtre_dates_sidebar(jerf_df, "Jerf", "jerf")
+if jorf_df is not None:
+    st.sidebar.markdown("**🏭 Jorf Lasfar**")
+    sel_jorf = filtre_dates_sidebar(jorf_df, "Jorf", "jorf")
 else:
-    sel_jerf = []
+    sel_jorf = []
 
 if safi_df is not None:
     st.sidebar.markdown("**🏗️ Safi**")
@@ -240,19 +247,28 @@ def appliquer_filtre(df, sel, col="Date"):
     if not sel: return df
     return df[df[col].isin(sel)]
 
+def afficher_ligne_copiable(data_dict, label="📋 Ligne copiable (Ctrl+C après sélection)"):
+    """Affiche les totaux sous forme d'une seule ligne transposée, facile à copier-coller."""
+    df_ligne = pd.DataFrame([data_dict])
+    with st.expander(label):
+        st.caption("Sélectionnez toute la ligne dans le tableau ci-dessous, copiez (Ctrl+C) et collez (Ctrl+V) dans Excel — les valeurs se colleront en colonnes.")
+        st.dataframe(df_ligne, use_container_width=True, hide_index=True,
+            column_config={k: st.column_config.NumberColumn(k, format="%d")
+                           for k, v in data_dict.items() if isinstance(v, (int, float))})
+
 # ─── CUMULS ──────────────────────────────────────────────────────────────────
-cumul_jerf  = float(jerf_df["TOTAL Jerf"].sum()) if jerf_df is not None else 0.0
+cumul_jorf  = float(jorf_df["TOTAL Jorf"].sum()) if jorf_df is not None else 0.0
 cumul_safi  = float(safi_df["TOTAL Safi"].sum()) if safi_df is not None else 0.0
-cumul_total = cumul_jerf + cumul_safi
+cumul_total = cumul_jorf + cumul_safi
 
 # ─── KPI CARDS ───────────────────────────────────────────────────────────────
 st.markdown("### Cumul à Date — Toute la Période")
 c1, c2, c3 = st.columns(3)
 with c1:
-    sub1 = "Export Engrais + Camions + VL" if jerf_df is not None else "⚠️ Fichier non chargé"
-    st.markdown(f"""<div class="kpi-card jerf">
-        <div class="kpi-label">🏭 Total Jerf Lasfar</div>
-        <div class="kpi-value">{fmt_number(cumul_jerf)}</div>
+    sub1 = "Export Engrais + Camions + VL" if jorf_df is not None else "⚠️ Fichier non chargé"
+    st.markdown(f"""<div class="kpi-card jorf">
+        <div class="kpi-label">🏭 Total Jorf Lasfar</div>
+        <div class="kpi-value">{fmt_number(cumul_jorf)}</div>
         <div class="kpi-sub">{sub1}</div></div>""", unsafe_allow_html=True)
 with c2:
     sub2 = "TSP Export + TSP ML" if safi_df is not None else "⚠️ Fichier non chargé"
@@ -262,38 +278,46 @@ with c2:
         <div class="kpi-sub">{sub2}</div></div>""", unsafe_allow_html=True)
 with c3:
     st.markdown(f"""<div class="kpi-card total">
-        <div class="kpi-label">📊 Total Jerf + Safi</div>
+        <div class="kpi-label">📊 Total Jorf + Safi</div>
         <div class="kpi-value">{fmt_number(cumul_total)}</div>
         <div class="kpi-sub">Consolidé toutes unités</div></div>""", unsafe_allow_html=True)
 
 st.divider()
 
-# ─── SECTION JERF ────────────────────────────────────────────────────────────
-st.markdown('<div class="section-header jerf">🏭 Jerf Lasfar — Chargement Export</div>', unsafe_allow_html=True)
+# ─── SECTION JORF ────────────────────────────────────────────────────────────
+st.markdown('<div class="section-header jorf">🏭 Jorf Lasfar — Chargement Export</div>', unsafe_allow_html=True)
 
-if jerf_df is not None:
-    show_jerf = appliquer_filtre(jerf_df, sel_jerf)
-    st.dataframe(show_jerf, use_container_width=True, hide_index=True,
-        height=min(500, 45 + 35 * len(show_jerf)),
+if jorf_df is not None:
+    show_jorf = appliquer_filtre(jorf_df, sel_jorf)
+    st.dataframe(show_jorf, use_container_width=True, hide_index=True,
+        height=min(500, 45 + 35 * len(show_jorf)),
         column_config={
             "Date":           st.column_config.TextColumn("Date"),
             "Export Engrais": st.column_config.NumberColumn("Export Engrais", format="%d"),
             "Export Camions": st.column_config.NumberColumn("Export Camions", format="%d"),
             "VL Camions":     st.column_config.NumberColumn("VL Camions",     format="%d"),
-            "TOTAL Jerf":     st.column_config.NumberColumn("TOTAL Jerf",     format="%d"),
+            "TOTAL Jorf":     st.column_config.NumberColumn("TOTAL Jorf",     format="%d"),
         })
-    if len(show_jerf) > 1:
-        st.line_chart(show_jerf.set_index("Date")["TOTAL Jerf"], color="#00843D")
+    # Ligne copiable — totaux Jorf
+    afficher_ligne_copiable({
+        "Export Engrais": int(show_jorf["Export Engrais"].sum()),
+        "Export Camions": int(show_jorf["Export Camions"].sum()),
+        "VL Camions":     int(show_jorf["VL Camions"].sum()),
+        "TOTAL Jorf":     int(show_jorf["TOTAL Jorf"].sum()),
+    }, "📋 Copier les totaux Jorf en ligne")
+    if len(show_jorf) > 1:
+        st.line_chart(show_jorf.set_index("Date")["TOTAL Jorf"], color="#00843D")
+    copier_ligne_btn(show_jorf, "TOTAL Jorf", "Total Jorf", "copy_jorf")
 else:
-    st.info("⬅️ Chargez le fichier Jerf dans la barre latérale.")
+    st.info("⬅️ Chargez le fichier Jorf dans la barre latérale.")
 
 st.divider()
 
 # ─── SECTION RADE ────────────────────────────────────────────────────────────
-st.markdown("<div class='section-header' style='background:#6B3FA0;'>⚓ Rade — Engrais en Attente d'Accostage</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-header' style='background:#6B3FA0;'>⚓ Rade JORF — Engrais en Attente d'Accostage</div>", unsafe_allow_html=True)
 
 if rade_df is not None:
-    show_rade = appliquer_filtre(rade_df, sel_jerf)
+    show_rade = appliquer_filtre(rade_df, sel_jorf)
     # Ligne total en bas
     total_rade = pd.DataFrame([{
         "Date":                "TOTAL GENERAL",
@@ -306,12 +330,17 @@ if rade_df is not None:
             "Date":                st.column_config.TextColumn("Date"),
             "Engrais en attente":  st.column_config.NumberColumn("Engrais en Attente (Rade)", format="%d"),
         })
+    # Ligne copiable — total Rade
+    afficher_ligne_copiable({
+        "Engrais en attente (Rade)": int(show_rade["Engrais en attente"].sum()),
+    }, "📋 Copier le total Rade en ligne")
     if len(show_rade) > 1:
         st.line_chart(show_rade.set_index("Date")["Engrais en attente"], color="#6B3FA0")
-elif file_jerf is not None:
-    st.warning("⚠️ Feuille 'Sit Navire' introuvable dans le fichier Jerf.")
+    copier_ligne_btn(show_rade, "Engrais en attente", "Engrais en attente (Rade)", "copy_rade")
+elif file_jorf is not None:
+    st.warning("⚠️ Feuille 'Sit Navire' introuvable dans le fichier Jorf.")
 else:
-    st.info("⬅️ Chargez le fichier Jerf pour voir les données Rade.")
+    st.info("⬅️ Chargez le fichier Jorf pour voir les données Rade.")
 
 st.divider()
 
@@ -334,21 +363,28 @@ if safi_df is not None:
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi", format="%d"),
         })
+    # Ligne copiable — totaux Safi
+    afficher_ligne_copiable({
+        "TSP Export": int(show_safi["TSP Export"].sum()),
+        "TSP ML":     int(show_safi["TSP ML"].sum()),
+        "TOTAL Safi": int(show_safi["TOTAL Safi"].sum()),
+    }, "📋 Copier les totaux Safi en ligne")
     if len(show_safi) > 1:
         st.line_chart(show_safi.set_index("Date")[["TSP Export", "TSP ML"]])
+    copier_ligne_btn(show_safi, "TOTAL Safi", "Total Safi", "copy_safi")
 else:
     st.info("⬅️ Chargez le fichier Safi dans la barre latérale.")
 
 st.divider()
 
 # ─── SECTION TOTAL ───────────────────────────────────────────────────────────
-st.markdown('<div class="section-header total">📊 Total Consolidé — Jerf + Safi par Jour</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header total">📊 Total Consolidé — Jorf + Safi par Jour</div>', unsafe_allow_html=True)
 
-if jerf_df is not None or safi_df is not None:
-    jerf_filtered = appliquer_filtre(jerf_df, sel_jerf) if jerf_df is not None else None
+if jorf_df is not None or safi_df is not None:
+    jorf_filtered = appliquer_filtre(jorf_df, sel_jorf) if jorf_df is not None else None
     safi_filtered = appliquer_filtre(safi_df, sel_safi) if safi_df is not None else None
 
-    j_day = jerf_filtered[["Date", "TOTAL Jerf"]].copy() if jerf_filtered is not None else pd.DataFrame(columns=["Date", "TOTAL Jerf"])
+    j_day = jorf_filtered[["Date", "TOTAL Jorf"]].copy() if jorf_filtered is not None else pd.DataFrame(columns=["Date", "TOTAL Jorf"])
     s_day = safi_filtered[["Date", "TOTAL Safi"]].copy() if safi_filtered is not None else pd.DataFrame(columns=["Date", "TOTAL Safi"])
 
     if not j_day.empty and not s_day.empty:
@@ -356,9 +392,9 @@ if jerf_df is not None or safi_df is not None:
     elif not j_day.empty:
         day_df = j_day.copy(); day_df["TOTAL Safi"] = 0.0
     else:
-        day_df = s_day.copy(); day_df["TOTAL Jerf"] = 0.0
+        day_df = s_day.copy(); day_df["TOTAL Jorf"] = 0.0
 
-    day_df["TOTAL Jerf+Safi"] = day_df["TOTAL Jerf"] + day_df["TOTAL Safi"]
+    day_df["TOTAL Jorf+Safi"] = day_df["TOTAL Jorf"] + day_df["TOTAL Safi"]
 
     def date_sort_key(d):
         try:
@@ -371,25 +407,33 @@ if jerf_df is not None or safi_df is not None:
     day_df = day_df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
     total_row = pd.DataFrame([{"Date": "TOTAL GENERAL",
-        "TOTAL Jerf":      day_df["TOTAL Jerf"].sum(),
+        "TOTAL Jorf":      day_df["TOTAL Jorf"].sum(),
         "TOTAL Safi":      day_df["TOTAL Safi"].sum(),
-        "TOTAL Jerf+Safi": day_df["TOTAL Jerf+Safi"].sum()}])
+        "TOTAL Jorf+Safi": day_df["TOTAL Jorf+Safi"].sum()}])
     disp_day = pd.concat([day_df, total_row], ignore_index=True)
 
     st.dataframe(disp_day, use_container_width=True, hide_index=True,
         height=min(600, 45 + 35 * len(disp_day)),
         column_config={
             "Date":            st.column_config.TextColumn("Date"),
-            "TOTAL Jerf":      st.column_config.NumberColumn("Total Jerf",      format="%d"),
+            "TOTAL Jorf":      st.column_config.NumberColumn("Total Jorf",      format="%d"),
             "TOTAL Safi":      st.column_config.NumberColumn("Total Safi",      format="%d"),
-            "TOTAL Jerf+Safi": st.column_config.NumberColumn("Total Jerf+Safi", format="%d"),
+            "TOTAL Jorf+Safi": st.column_config.NumberColumn("Total Jorf+Safi", format="%d"),
         })
 
-    st.markdown("#### 📊 Evolution mensuelle — Jerf vs Safi")
+    # Ligne copiable — totaux consolidés
+    afficher_ligne_copiable({
+        "Total Jorf":      int(day_df["TOTAL Jorf"].sum()),
+        "Total Safi":      int(day_df["TOTAL Safi"].sum()),
+        "Total Jorf+Safi": int(day_df["TOTAL Jorf+Safi"].sum()),
+    }, "📋 Copier les totaux consolidés en ligne")
+
+    copier_ligne_btn(disp_day, "TOTAL Jorf+Safi", "Total Jorf+Safi", "copy_total")
+    st.markdown("#### 📊 Evolution mensuelle — Jorf vs Safi")
     chart_df = day_df.copy()
     chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
     chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
-    mois_tot = chart_df.groupby("Mois")[["TOTAL Jerf", "TOTAL Safi"]].sum().reset_index()
+    mois_tot = chart_df.groupby("Mois")[["TOTAL Jorf", "TOTAL Safi"]].sum().reset_index()
 
     def mois_sort_key(m):
         noms = {"Jan":1,"Fév":2,"Mar":3,"Avr":4,"Mai":5,"Jun":6,
@@ -402,14 +446,15 @@ if jerf_df is not None or safi_df is not None:
 
     mois_tot["_sort"] = mois_tot["Mois"].apply(mois_sort_key)
     mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
-    mois_tot = mois_tot[(mois_tot["TOTAL Jerf"] > 0) | (mois_tot["TOTAL Safi"] > 0)]
+    mois_tot = mois_tot[(mois_tot["TOTAL Jorf"] > 0) | (mois_tot["TOTAL Safi"] > 0)]
 
     if len(mois_tot) > 0:
-        st.bar_chart(mois_tot.set_index("Mois")[["TOTAL Jerf", "TOTAL Safi"]])
+        st.bar_chart(mois_tot.set_index("Mois")[["TOTAL Jorf", "TOTAL Safi"]])
     else:
         st.info("Pas encore de données pour le graphique mensuel.")
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
