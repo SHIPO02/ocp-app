@@ -135,15 +135,15 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
-    st.title("Suivi chargement exort")
-    st.markdown("##### Reporting Consolidé — Jerf Lasfar & Safi • JPH 2026")
+    st.title("Suivi chargement export")
+    st.markdown("##### Reporting Consolidé — Jerf Lasfar & Safi ")
 
 st.divider()
 
 # ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 st.sidebar.header("📂 Chargement des fichiers")
-file_jerf = st.sidebar.file_uploader("🏭 Fichier Jerf (Reporting-JPH 2026)", type=["xlsx"], key="jerf")
-file_safi = st.sidebar.file_uploader("🏗️ Fichier Safi (Suivi Production MFS 26)", type=["xlsx"], key="safi")
+file_jerf = st.sidebar.file_uploader("🏭 Fichier Jerf ", type=["xlsx"], key="jerf")
+file_safi = st.sidebar.file_uploader("🏗️ Fichier Safi ", type=["xlsx"], key="safi")
 
 # ─── PARSE JERF ──────────────────────────────────────────────────────────────
 jerf_df = None
@@ -291,9 +291,7 @@ if file_safi:
 
         safi_df = pd.DataFrame(rows) if rows else None
 
-        with st.sidebar.expander("🔍 Détail lecture Safi"):
-            for d in safi_debug:
-                st.sidebar.caption(d)
+
 
     except Exception as e:
         st.sidebar.error(f"Erreur Safi : {e}")
@@ -568,6 +566,7 @@ if jerf_df is not None or safi_df is not None:
 
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
+
 
 
 
