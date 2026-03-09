@@ -282,6 +282,7 @@ if file_safi:
 
                 rows.append({
                     "Mois":       sheet,
+                    "Jour":       jour_num,
                     "Date":       date_str,
                     "TSP Export": tsp_exp,
                     "TSP ML":     tsp_ml,
@@ -316,7 +317,7 @@ if safi_df is not None:
     # Filtre par jour — disponible quel que soit le mois sélectionné
     df_pour_jours = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
     jours_dispo = ["Tous"] + [str(j) for j in sorted(df_pour_jours["Jour"].unique().tolist())]
-    choix_jour_safi = st.sidebar.selectbox("📆 Jour Safi", jours_dispo)
+    choix_jour_safi = st.sidebar.selectbox("📆 Jour Safi", jours_dispo, key="jour_safi_select")
 else:
     choix_safi      = "Tous"
     choix_jour_safi = "Tous"
@@ -384,12 +385,11 @@ st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP 
 
 if safi_df is not None:
     # Filtrage mois puis jour
-    if choix_safi == "Tous":
-        show_safi = safi_df.copy()
-    else:
-        show_safi = safi_df[safi_df["Mois"] == choix_safi].copy()
-        if choix_jour_safi != "Tous":
-            show_safi = show_safi[show_safi["Jour"] == int(choix_jour_safi)]
+    show_safi = safi_df.copy()
+    if choix_safi != "Tous":
+        show_safi = show_safi[show_safi["Mois"] == choix_safi]
+    if choix_jour_safi != "Tous":
+        show_safi = show_safi[show_safi["Jour"] == int(choix_jour_safi)]
 
     # Tableau affiché
     display_safi = show_safi[["Mois", "Jour", "Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
