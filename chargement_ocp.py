@@ -115,6 +115,31 @@ if file_jerf:
     except Exception as e:
         st.sidebar.error(f"Erreur Jerf : {e}")
 
+# ─── PARSE RADE (Sit Navire) ─────────────────────────────────────────────────
+rade_df = None
+if file_jerf:
+    try:
+        # Feuille "Sit Navire" — col B (index 1) = Date, col D (index 3) = Engrais en attente
+        df_rade = pd.read_excel(file_jerf, sheet_name='Sit Navire', header=None)
+        rows_rade = []
+        for r in range(len(df_rade)):
+            date_val = df_rade.iloc[r, 1]   # colonne B
+            val      = df_rade.iloc[r, 3]   # colonne D = en attente
+            # Ignorer les lignes d'en-tête ou vides
+            if pd.isna(date_val) or pd.isna(val): continue
+            s_date = str(date_val).strip()
+            if s_date in ("", "nan", "Date"): continue
+            # Formatter la date
+            if hasattr(date_val, 'strftime'):
+                date_label = date_val.strftime('%d/%m/%Y')
+            else:
+                date_label = s_date
+            val_num = force_nombre(val)
+            rows_rade.append({"Date": date_label, "Engrais en attente": val_num})
+        rade_df = pd.DataFrame(rows_rade) if rows_rade else None
+    except Exception as e:
+        pass  # Feuille absente ou erreur silencieuse
+
 # ─── PARSE SAFI ──────────────────────────────────────────────────────────────
 safi_df = None
 if file_safi:
@@ -264,6 +289,32 @@ else:
 
 st.divider()
 
+# ─── SECTION RADE ────────────────────────────────────────────────────────────
+st.markdown("<div class='section-header' style='background:#6B3FA0;'>⚓ Rade — Engrais en Attente d'Accostage</div>", unsafe_allow_html=True)
+
+if rade_df is not None:
+    show_rade = appliquer_filtre(rade_df, sel_jerf)
+    # Ligne total en bas
+    total_rade = pd.DataFrame([{
+        "Date":                "TOTAL GENERAL",
+        "Engrais en attente":  show_rade["Engrais en attente"].sum()
+    }])
+    display_rade = pd.concat([show_rade, total_rade], ignore_index=True)
+    st.dataframe(display_rade, use_container_width=True, hide_index=True,
+        height=min(500, 45 + 35 * len(display_rade)),
+        column_config={
+            "Date":                st.column_config.TextColumn("Date"),
+            "Engrais en attente":  st.column_config.NumberColumn("Engrais en Attente (Rade)", format="%d"),
+        })
+    if len(show_rade) > 1:
+        st.line_chart(show_rade.set_index("Date")["Engrais en attente"], color="#6B3FA0")
+elif file_jerf is not None:
+    st.warning("⚠️ Feuille 'Sit Navire' introuvable dans le fichier Jerf.")
+else:
+    st.info("⬅️ Chargez le fichier Jerf pour voir les données Rade.")
+
+st.divider()
+
 # ─── SECTION SAFI ────────────────────────────────────────────────────────────
 st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP ML</div>', unsafe_allow_html=True)
 
@@ -359,7 +410,6 @@ if jerf_df is not None or safi_df is not None:
         st.info("Pas encore de données pour le graphique mensuel.")
 else:
     st.info("⬅️ Chargez au moins un fichier pour voir le total consolidé.")
-
 
 
 
