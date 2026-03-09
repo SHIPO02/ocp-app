@@ -190,57 +190,85 @@ if file_safi:
         xl = pd.ExcelFile(file_safi)
         all_sheets = xl.sheet_names
 
-        # Debug : afficher les feuilles trouvées dans la sidebar
         st.sidebar.markdown("**Feuilles détectées (Safi) :**")
         st.sidebar.caption(" | ".join(all_sheets))
 
-        COL_TSP_EXP = 31   # AF (0-indexed)
-        COL_TSP_ML  = 32   # AG (0-indexed)
-        START_ROW   = 6    # ligne 7 → index 6
+        # Colonnes fixes : AF=31, AG=32 (0-indexed)
+        COL_JOUR    = 1   # Colonne B
+        COL_TSP_EXP = 31  # Colonne AF
+        COL_TSP_ML  = 32  # Colonne AG
+        START_ROW   = 6   # Ligne 7 → index 6 (le 1er jour)
+
+        def parse_mois_annee(sheet_name):
+            """
+            Extrait mois et année depuis le nom de la feuille.
+            Exemples : 'JANV 2026', 'Fév 2026', 'Mars 2026' → (mois_num, annee)
+            """
+            mois_map = {
+                "jan": 1, "fev": 2, "fév": 2, "mar": 3, "avr": 4,
+                "mai": 5, "jun": 6, "jui": 6, "jul": 7, "aou": 8,
+                "aoû": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12, "déc": 12
+            }
+            parts = sheet_name.strip().split()
+            mois_num = None
+            annee = None
+            for p in parts:
+                p_low = p.lower()[:3]
+                if p_low in mois_map:
+                    mois_num = mois_map[p_low]
+                try:
+                    y = int(p)
+                    if 2000 <= y <= 2100:
+                        annee = y
+                except:
+                    pass
+            return mois_num, annee
 
         rows = []
         for sheet in all_sheets:
             if not is_data_sheet(sheet):
                 continue
 
+            mois_num, annee = parse_mois_annee(sheet)
+            if mois_num is None or annee is None:
+                safi_debug.append(f"⚠️ {sheet} : impossible d'extraire mois/année — ignorée")
+                continue
+
             dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None)
 
-            # Si le fichier n'a pas assez de colonnes, essayer de chercher TSP Export/ML par en-tête
+            # Chercher colonnes TSP si AF/AG n'existent pas
             tsp_exp_col = COL_TSP_EXP
             tsp_ml_col  = COL_TSP_ML
 
             if dfs.shape[1] <= COL_TSP_ML:
-                # Chercher les colonnes par nom dans les premières lignes
-                found = False
+                # Recherche par en-tête dans les 8 premières lignes
+                found_exp = False
                 for hrow in range(min(8, len(dfs))):
                     row_vals = [str(v).strip().upper() for v in dfs.iloc[hrow]]
                     for ci, v in enumerate(row_vals):
                         if "TSP" in v and "EXPORT" in v:
-                            tsp_exp_col = ci; found = True
+                            tsp_exp_col = ci; found_exp = True
                         if "TSP" in v and "ML" in v:
                             tsp_ml_col = ci
-                if not found:
-                    safi_debug.append(f"⚠️ {sheet} : colonnes AF/AG absentes et entêtes TSP non trouvés — ignorée")
+                if not found_exp:
+                    safi_debug.append(f"⚠️ {sheet} : colonnes TSP non trouvées ({dfs.shape[1]} cols) — ignorée")
                     continue
-
-            # Chercher la ligne de début (1er jour = cellule A contenant 1)
-            start = START_ROW
-            for ri in range(START_ROW, min(START_ROW + 5, len(dfs))):
-                try:
-                    val = int(float(str(dfs.iloc[ri, 0]).strip()))
-                    if val == 1:
-                        start = ri
-                        break
-                except:
-                    pass
 
             nb_lignes = 0
-            for ri in range(start, len(dfs)):
-                jour_val = dfs.iloc[ri, 0]
-                if pd.isna(jour_val) or str(jour_val).strip() in ("", "nan", "Total", "TOTAL", "Cumul", "CUMUL"):
+            # Lire directement depuis START_ROW (ligne 7)
+            for ri in range(START_ROW, len(dfs)):
+                jour_val = dfs.iloc[ri, COL_JOUR]
+
+                # Arrêter si on tombe sur une ligne vide ou de total
+                if pd.isna(jour_val):
                     continue
+                s = str(jour_val).strip()
+                if s in ("", "nan") or any(k in s.upper() for k in ["TOTAL", "CUMUL", "MOYENNE", "MOY"]):
+                    continue
+
+                # Le numéro du jour doit être un entier 1-31
                 try:
-                    jour_num = int(float(str(jour_val).strip()))
+                    jour_num = int(float(s))
                 except ValueError:
                     continue
                 if jour_num < 1 or jour_num > 31:
@@ -249,21 +277,22 @@ if file_safi:
                 tsp_exp = force_nombre(dfs.iloc[ri, tsp_exp_col]) if tsp_exp_col < dfs.shape[1] else 0.0
                 tsp_ml  = force_nombre(dfs.iloc[ri, tsp_ml_col])  if tsp_ml_col  < dfs.shape[1] else 0.0
 
+                # Construire la date complète : jour/mois/année
+                date_str = f"{jour_num:02d}/{mois_num:02d}/{annee}"
+
                 rows.append({
                     "Mois":       sheet,
-                    "Jour":       jour_num,
-                    "Date Safi":  f"{jour_num:02d} — {sheet}",
+                    "Date":       date_str,
                     "TSP Export": tsp_exp,
                     "TSP ML":     tsp_ml,
                     "TOTAL Safi": tsp_exp + tsp_ml
                 })
                 nb_lignes += 1
 
-            safi_debug.append(f"✅ {sheet} : {nb_lignes} jours lus (cols {tsp_exp_col}/{tsp_ml_col})")
+            safi_debug.append(f"✅ {sheet} ({mois_num:02d}/{annee}) : {nb_lignes} jours lus")
 
         safi_df = pd.DataFrame(rows) if rows else None
 
-        # Affichage debug dans sidebar (dépliable)
         with st.sidebar.expander("🔍 Détail lecture Safi"):
             for d in safi_debug:
                 st.sidebar.caption(d)
@@ -351,49 +380,41 @@ st.markdown('<div class="section-header safi">🏗️ Safi — TSP Export & TSP 
 if safi_df is not None:
     show_safi = safi_df if choix_safi == "Tous" else safi_df[safi_df["Mois"] == choix_safi]
 
-    # Tableau par jour
-    display_safi = show_safi[["Mois", "Jour", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
+    # Tableau par jour avec date complète dd/mm/yyyy
+    display_safi = show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]].copy()
 
-    # Ligne total par mois
+    # Lignes total par mois si tous les mois affichés
     if choix_safi == "Tous":
-        totaux = show_safi.groupby("Mois")[["TSP Export", "TSP ML", "TOTAL Safi"]].sum().reset_index()
-        totaux.insert(1, "Jour", "— TOTAL —")
-        totaux["Jour"] = totaux["Jour"].astype(str)
-        display_safi["Jour"] = display_safi["Jour"].astype(str)
-        display_safi = pd.concat([display_safi, totaux], ignore_index=True).sort_values(
-            by=["Mois"], kind="stable"
-        )
-    else:
-        # Ajouter une ligne total en bas
-        total_row = pd.DataFrame([{
-            "Mois": f"🔢 TOTAL {choix_safi}",
-            "Jour": "—",
-            "TSP Export": show_safi["TSP Export"].sum(),
-            "TSP ML":     show_safi["TSP ML"].sum(),
-            "TOTAL Safi": show_safi["TOTAL Safi"].sum()
-        }])
-        display_safi["Jour"] = display_safi["Jour"].astype(str)
-        display_safi = pd.concat([display_safi, total_row], ignore_index=True)
+        totaux_mois = show_safi.groupby("Mois")[["TSP Export", "TSP ML", "TOTAL Safi"]].sum().reset_index()
+        totaux_mois["Date"] = totaux_mois["Mois"].apply(lambda m: f"🔢 TOTAL — {m}")
+        totaux_mois = totaux_mois[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]]
+        display_safi = pd.concat([display_safi, totaux_mois], ignore_index=True)
+
+    # Ligne grand total toujours en bas
+    grand_total = pd.DataFrame([{
+        "Date":       "🔢 TOTAL GÉNÉRAL",
+        "TSP Export": show_safi["TSP Export"].sum(),
+        "TSP ML":     show_safi["TSP ML"].sum(),
+        "TOTAL Safi": show_safi["TOTAL Safi"].sum()
+    }])
+    display_safi = pd.concat([display_safi, grand_total], ignore_index=True)
 
     st.dataframe(
         display_safi, use_container_width=True, hide_index=True,
         height=min(600, 45 + 35 * len(display_safi)),
         column_config={
-            "Mois":       st.column_config.TextColumn("Mois"),
-            "Jour":       st.column_config.TextColumn("Jour"),
+            "Date":       st.column_config.TextColumn("Date"),
             "TSP Export": st.column_config.NumberColumn("TSP Export", format="%d"),
             "TSP ML":     st.column_config.NumberColumn("TSP ML",     format="%d"),
             "TOTAL Safi": st.column_config.NumberColumn("TOTAL Safi ✅", format="%d"),
         }
     )
-    export_buttons(show_safi[["Mois","Jour","TSP Export","TSP ML","TOTAL Safi"]],
+    export_buttons(show_safi[["Date", "TSP Export", "TSP ML", "TOTAL Safi"]],
                    "Safi", "Rapport Safi TSP", choix_safi, "safi")
 
     # Graphique
     if len(show_safi) > 1:
-        chart_df = show_safi.copy()
-        chart_df["Label"] = chart_df["Mois"].astype(str) + "-J" + chart_df["Jour"].astype(str)
-        st.line_chart(chart_df.set_index("Label")[["TSP Export", "TSP ML"]])
+        st.line_chart(show_safi.set_index("Date")[["TSP Export", "TSP ML"]])
 else:
     st.info("⬅️ Chargez le fichier **SUIVI DE LA PRODUCTION MFS 26** dans la barre latérale pour voir les données Safi.")
 
