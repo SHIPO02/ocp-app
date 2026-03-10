@@ -496,23 +496,19 @@ if any_data:
         else:
             st.info("Chargez le fichier Jorf pour voir la Rade.")
 
-    # GRAPHIQUE DROIT — Jorf + Safi par mois (barres groupées)
+    # GRAPHIQUE DROIT — courbe Jorf + Safi + Total par jour
     with g_right:
-        st.markdown('<div class="section-header total">Jorf + Safi — Evolution Mensuelle</div>', unsafe_allow_html=True)
-        chart_df = unified_df.copy()
-        chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
-        chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
-        cols_mois = [c for c in ["J_TOTAL", "S_TOTAL"] if c in chart_df.columns]
-        if cols_mois and len(chart_df) > 0:
-            mois_tot = chart_df.groupby("Mois")[cols_mois].sum().reset_index()
-            mois_tot["_sort"] = mois_tot["Mois"].apply(mois_sort_key)
-            mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
-            mois_tot = mois_tot[mois_tot[cols_mois].sum(axis=1) > 0]
-            if len(mois_tot) > 0:
-                mois_tot = mois_tot.rename(columns={"J_TOTAL": "Total Jorf", "S_TOTAL": "Total Safi"})
-                st.bar_chart(mois_tot.set_index("Mois")[["Total Jorf", "Total Safi"]], color=["#00843D", "#1A6FA8"])
-            else:
-                st.info("Pas encore de donnees pour le graphique mensuel.")
+        st.markdown('<div class="section-header total">Jorf + Safi + Total — Evolution par Jour</div>', unsafe_allow_html=True)
+        cols_line = [c for c in ["J_TOTAL", "S_TOTAL", "TOTAL"] if c in unified_df.columns]
+        if cols_line and len(unified_df) > 1:
+            line_df = unified_df.set_index("Date")[cols_line].copy()
+            rename_map = {"J_TOTAL": "Jorf", "S_TOTAL": "Safi", "TOTAL": "Total"}
+            line_df = line_df.rename(columns={k: v for k, v in rename_map.items() if k in line_df.columns})
+            colors = []
+            if "Jorf"  in line_df.columns: colors.append("#00843D")
+            if "Safi"  in line_df.columns: colors.append("#1A6FA8")
+            if "Total" in line_df.columns: colors.append("#C05A00")
+            st.line_chart(line_df, color=colors)
         else:
             st.info("Chargez les fichiers pour voir le graphique.")
 else:
