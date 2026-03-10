@@ -408,28 +408,50 @@ if any_data:
     unified_rows = []
     for d in all_dates:
         row = {"Date": d}
-        # ── JORF ──
+        # ── JORF détail ──
         if jorf_f is not None:
             r = jorf_f[jorf_f["Date"] == d]
             row["J_Engrais"] = round(r["Export Engrais"].sum(), 1) if not r.empty else 0.0
             row["J_Camions"] = round(r["Export Camions"].sum(), 1) if not r.empty else 0.0
             row["J_VL"]      = round(r["VL Camions"].sum(), 1)     if not r.empty else 0.0
-            row["J_TOTAL"]   = round(r["TOTAL Jorf"].sum(), 1)     if not r.empty else 0.0
-        # ── SAFI ──
+        # ── SAFI détail ──
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["S_Engrais"] = round(r["TSP Export"].sum(), 1) if not r.empty else 0.0
-            row["S_ML"]      = round(r["TSP ML"].sum(), 1)     if not r.empty else 0.0
-            row["S_TOTAL"]   = round(r["TOTAL Safi"].sum(), 1) if not r.empty else 0.0
-        # ── RADE ──
+            row["S_VL"]      = round(r["TSP ML"].sum(), 1)     if not r.empty else 0.0
+        # ── TOTAUX ──
+        j_tot = round(
+            row.get("J_Engrais",0.0)+row.get("J_Camions",0.0)+row.get("J_VL",0.0), 1
+        ) if jorf_f is not None else 0.0
+        s_tot = round(
+            row.get("S_Engrais",0.0)+row.get("S_VL",0.0), 1
+        ) if safi_f is not None else 0.0
+        if jorf_f is not None: row["J_TOTAL"] = j_tot
+        if safi_f is not None: row["S_TOTAL"] = s_tot
+        row["TOTAL"] = round(j_tot + s_tot, 1)
+        # ── RADE JORF ──
         if rade_f is not None:
             r = rade_f[rade_f["Date"] == d]
-            row["RADE"] = round(r["Engrais en attente"].sum(), 1) if not r.empty else 0.0
-        # ── TOTAL ──
-        row["TOTAL"] = round(row.get("J_TOTAL", 0.0) + row.get("S_TOTAL", 0.0), 1)
+            row["RADE_J"] = round(r["Engrais en attente"].sum(), 1) if not r.empty else 0.0
+        # ── RADE SAFI (TSP ML = mise a la mer / attente) ──
+        if safi_f is not None:
+            r = safi_f[safi_f["Date"] == d]
+            row["RADE_S"] = round(r["TSP ML"].sum(), 1) if not r.empty else 0.0
         unified_rows.append(row)
 
     unified_df = pd.DataFrame(unified_rows)
+
+    # Ordre explicite des colonnes
+    col_order = ["Date"]
+    if jorf_f is not None: col_order += ["J_Engrais", "J_Camions", "J_VL"]
+    if safi_f is not None: col_order += ["S_Engrais", "S_VL"]
+    if jorf_f is not None: col_order += ["J_TOTAL"]
+    if safi_f is not None: col_order += ["S_TOTAL"]
+    col_order += ["TOTAL"]
+    if rade_f is not None: col_order += ["RADE_J"]
+    if safi_f is not None: col_order += ["RADE_S"]
+    col_order = [c for c in col_order if c in unified_df.columns]
+    unified_df = unified_df[col_order]
 
     # Ligne TOTAL GENERAL
     total_row = {"Date": "TOTAL GENERAL"}
@@ -438,20 +460,24 @@ if any_data:
             total_row[col] = round(unified_df[col].sum(), 1)
     disp_unified = pd.concat([unified_df, pd.DataFrame([total_row])], ignore_index=True)
 
-    # Config colonnes avec noms affichés clairs
+    # Config colonnes
     col_cfg = {"Date": st.column_config.TextColumn("Date")}
     if jorf_f is not None:
         col_cfg["J_Engrais"] = st.column_config.NumberColumn("Export Engrais", format="%.1f")
         col_cfg["J_Camions"] = st.column_config.NumberColumn("Export Camions", format="%.1f")
         col_cfg["J_VL"]      = st.column_config.NumberColumn("VL Camions",     format="%.1f")
-        col_cfg["J_TOTAL"]   = st.column_config.NumberColumn("TOTAL Jorf",     format="%.1f")
     if safi_f is not None:
         col_cfg["S_Engrais"] = st.column_config.NumberColumn("Export Engrais", format="%.1f")
-        col_cfg["S_ML"]      = st.column_config.NumberColumn("ML",             format="%.1f")
-        col_cfg["S_TOTAL"]   = st.column_config.NumberColumn("TOTAL Safi",     format="%.1f")
+        col_cfg["S_VL"]      = st.column_config.NumberColumn("VL Camions",     format="%.1f")
+    if jorf_f is not None:
+        col_cfg["J_TOTAL"]   = st.column_config.NumberColumn("Total Jorf",     format="%.1f")
+    if safi_f is not None:
+        col_cfg["S_TOTAL"]   = st.column_config.NumberColumn("Total Safi",     format="%.1f")
+    col_cfg["TOTAL"]  = st.column_config.NumberColumn("Total Jorf+Safi", format="%.1f")
     if rade_f is not None:
-        col_cfg["RADE"]  = st.column_config.NumberColumn("Rade Jorf",      format="%.1f")
-    col_cfg["TOTAL"] = st.column_config.NumberColumn("TOTAL Jorf+Safi", format="%.1f")
+        col_cfg["RADE_J"] = st.column_config.NumberColumn("Rade Jorf",  format="%.1f")
+    if safi_f is not None:
+        col_cfg["RADE_S"] = st.column_config.NumberColumn("Rade Safi",  format="%.1f")
 
     st.dataframe(disp_unified, use_container_width=True, hide_index=True,
         height=min(700, 45 + 35 * len(disp_unified)),
@@ -467,52 +493,42 @@ if any_data:
 
     st.divider()
 
-    # ─── GRAPHIQUES ──────────────────────────────────────────────────────────
+    # ─── 2 GRAPHIQUES COTE A COTE ────────────────────────────────────────────
+    g_left, g_right = st.columns(2)
 
-    # Courbes Jorf
-    if jorf_f is not None and len(unified_df) > 1:
-        st.markdown('<div class="section-header jorf">Evolution Jorf Lasfar — Detail par Jour</div>', unsafe_allow_html=True)
-        cols_jorf = [c for c in ["J_Engrais", "J_Camions", "J_VL"] if c in unified_df.columns]
-        if cols_jorf:
-            chart_j = unified_df.set_index("Date")[cols_jorf].copy()
-            chart_j.columns = ["Export Engrais", "Export Camions", "VL Camions"]
-            st.line_chart(chart_j, color=["#00843D", "#4CAF50", "#A5D6A7"])
-        st.markdown('<div class="section-header jorf" style="font-size:15px;padding:7px 14px;">Total Jorf</div>', unsafe_allow_html=True)
-        st.area_chart(unified_df.set_index("Date")[["J_TOTAL"]].rename(columns={"J_TOTAL": "Total Jorf"}), color="#00843D")
-
-    # Courbes Safi
-    if safi_f is not None and len(unified_df) > 1:
-        st.markdown('<div class="section-header safi">Evolution Safi — Detail par Jour</div>', unsafe_allow_html=True)
-        cols_safi = [c for c in ["S_Engrais", "S_ML"] if c in unified_df.columns]
-        if cols_safi:
-            chart_s = unified_df.set_index("Date")[cols_safi].copy()
-            chart_s.columns = ["Export Engrais", "ML"]
-            st.line_chart(chart_s, color=["#1A6FA8", "#64B5F6"])
-        st.markdown('<div class="section-header safi" style="font-size:15px;padding:7px 14px;">Total Safi</div>', unsafe_allow_html=True)
-        st.area_chart(unified_df.set_index("Date")[["S_TOTAL"]].rename(columns={"S_TOTAL": "Total Safi"}), color="#1A6FA8")
-
-    # Graphique barres Rade
-    if rade_f is not None and "RADE" in unified_df.columns and len(unified_df) > 1:
-        st.markdown('<div class="section-header rade">Rade Jorf — Engrais en Attente par Jour</div>', unsafe_allow_html=True)
-        rade_chart = unified_df[unified_df["RADE"] > 0].set_index("Date")[["RADE"]].rename(columns={"RADE": "Rade Jorf"})
-        if len(rade_chart) > 0:
-            st.bar_chart(rade_chart, color="#6B3FA0")
-
-    # Graphique mensuel consolidé
-    st.markdown('<div class="section-header total">Evolution Mensuelle — Jorf vs Safi</div>', unsafe_allow_html=True)
-    chart_df = unified_df.copy()
-    chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
-    chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
-    cols_mois = [c for c in ["J_TOTAL", "S_TOTAL"] if c in chart_df.columns]
-    if cols_mois:
-        mois_tot = chart_df.groupby("Mois")[cols_mois].sum().reset_index()
-        mois_tot["_sort"] = mois_tot["Mois"].apply(mois_sort_key)
-        mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
-        mois_tot = mois_tot[mois_tot[cols_mois].sum(axis=1) > 0]
-        if len(mois_tot) > 0:
-            mois_tot = mois_tot.rename(columns={"J_TOTAL": "Total Jorf", "S_TOTAL": "Total Safi"})
-            st.bar_chart(mois_tot.set_index("Mois")[["Total Jorf", "Total Safi"]], color=["#00843D", "#1A6FA8"])
+    # GRAPHIQUE GAUCHE — Rade (barres violettes)
+    with g_left:
+        st.markdown('<div class="section-header rade">Rade Jorf — Engrais en Attente</div>', unsafe_allow_html=True)
+        if rade_f is not None and "RADE_J" in unified_df.columns and len(unified_df) > 1:
+            rade_chart = unified_df[unified_df["RADE_J"] > 0].copy()
+            if len(rade_chart) > 0:
+                st.bar_chart(
+                    rade_chart.set_index("Date")[["RADE_J"]].rename(columns={"RADE_J": "Rade Jorf"}),
+                    color="#6B3FA0"
+                )
+            else:
+                st.info("Pas de donnees Rade disponibles.")
         else:
-            st.info("Pas encore de donnees pour le graphique mensuel.")
+            st.info("Chargez le fichier Jorf pour voir la Rade.")
+
+    # GRAPHIQUE DROIT — Jorf + Safi par mois (barres groupées)
+    with g_right:
+        st.markdown('<div class="section-header total">Jorf + Safi — Evolution Mensuelle</div>', unsafe_allow_html=True)
+        chart_df = unified_df.copy()
+        chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
+        chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
+        cols_mois = [c for c in ["J_TOTAL", "S_TOTAL"] if c in chart_df.columns]
+        if cols_mois and len(chart_df) > 0:
+            mois_tot = chart_df.groupby("Mois")[cols_mois].sum().reset_index()
+            mois_tot["_sort"] = mois_tot["Mois"].apply(mois_sort_key)
+            mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+            mois_tot = mois_tot[mois_tot[cols_mois].sum(axis=1) > 0]
+            if len(mois_tot) > 0:
+                mois_tot = mois_tot.rename(columns={"J_TOTAL": "Total Jorf", "S_TOTAL": "Total Safi"})
+                st.bar_chart(mois_tot.set_index("Mois")[["Total Jorf", "Total Safi"]], color=["#00843D", "#1A6FA8"])
+            else:
+                st.info("Pas encore de donnees pour le graphique mensuel.")
+        else:
+            st.info("Chargez les fichiers pour voir le graphique.")
 else:
     st.info("Chargez au moins un fichier pour voir le tableau consolide.")
