@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import os
 
-st.set_page_config(page_title="OCP - Suivi chargement Export", layout="wide")
+st.set_page_config(page_title="OCP - Suivi charge Manufacturing", layout="wide")
 
 st.markdown("""
     <style>
@@ -21,6 +21,7 @@ st.markdown("""
         .kpi-label { font-size: 12px; font-weight: 600; opacity: 0.85; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
         .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 700; line-height: 1; }
         .kpi-sub   { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+        .kpi-date  { font-size: 11px; opacity: 0.85; margin-top: 6px; font-weight: 600; letter-spacing: 0.5px; }
         .section-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; margin: 20px 0 10px 0; font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: white; }
         .section-header.jorf  { background: var(--jorf-color); }
         .section-header.safi  { background: var(--safi-color); }
@@ -83,6 +84,13 @@ def mois_sort_key(m):
     except:
         return (9999, 99)
 
+def date_sort_key(d):
+    try:
+        parts = str(d).split("/")
+        return (int(parts[2]), int(parts[1]), int(parts[0]))
+    except:
+        return (9999, 99, 99)
+
 SKIP_KEYWORDS = ["total","recap","recapitulatif","annee","annuel","bilan","synthese","summary"]
 
 def is_data_sheet(name):
@@ -94,6 +102,18 @@ def read_excel_any(file):
         return 'xlrd'
     return 'openpyxl'
 
+def get_derniere_valeur(df, col_valeur, col_date="Date"):
+    """Retourne (valeur, date) de la dernière ligne non-nulle triée par date."""
+    if df is None or df.empty:
+        return 0.0, None
+    tmp = df[df[col_valeur] > 0].copy()
+    if tmp.empty:
+        return 0.0, None
+    tmp["_sort"] = tmp[col_date].apply(date_sort_key)
+    tmp = tmp.sort_values("_sort")
+    last = tmp.iloc[-1]
+    return round(float(last[col_valeur]), 1), last[col_date]
+
 # HEADER
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
@@ -102,7 +122,7 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
-    st.title("Suivi chargement export")
+    st.title("Suivi charge Manufacturing")
     st.markdown("##### Reporting Consolide — Jorf Lasfar & Safi &nbsp;|&nbsp; Valeurs en milliers de tonnes")
 
 st.divider()
@@ -168,7 +188,6 @@ if file_safi:
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
         def normaliser(s):
-            """Supprime les accents et met en minuscule."""
             accents = {"é":"e","è":"e","ê":"e","ë":"e","à":"a","â":"a","ù":"u",
                        "û":"u","ô":"o","î":"i","ï":"i","ç":"c","ü":"u","ö":"o"}
             s = s.lower()
@@ -178,11 +197,10 @@ if file_safi:
 
         def parse_mois_annee(sheet_name):
             mois_map = {
-                "jan":1, "fev":2, "fev":2, "mar":3, "avr":4, "mai":5,
+                "jan":1, "fev":2, "mar":3, "avr":4, "mai":5,
                 "jun":6, "jui":6, "jul":7, "aou":8, "sep":9,
                 "oct":10, "nov":11, "dec":12
             }
-            # Variantes longues (ex: "Février 2026", "février", "fevrier")
             mois_long = {
                 "janvier":1, "fevrier":2, "mars":3, "avril":4, "mai":5,
                 "juin":6, "juillet":7, "aout":8, "septembre":9,
@@ -192,10 +210,8 @@ if file_safi:
             mois_num = None; annee = None
             for p in parts:
                 p_norm = normaliser(p)
-                # Essai correspondance courte (3 lettres)
                 if p_norm[:3] in mois_map:
                     mois_num = mois_map[p_norm[:3]]
-                # Essai correspondance longue
                 if p_norm in mois_long:
                     mois_num = mois_long[p_norm]
                 try:
@@ -242,7 +258,6 @@ st.sidebar.divider()
 st.sidebar.header("Filtrage")
 
 def filtre_dates_sidebar(df, label_prefix, key_prefix, date_col="Date"):
-    # Mois présents dans les données
     mois_map = {}
     annees_presentes = set()
     for d in df[date_col].unique():
@@ -254,22 +269,19 @@ def filtre_dates_sidebar(df, label_prefix, key_prefix, date_col="Date"):
             m_label = "Autre"
         mois_map.setdefault(m_label, []).append(d)
 
-    # Ajouter les 12 mois pour chaque année présente (même sans données)
     for annee in annees_presentes:
         for num, nom in NOMS_MOIS.items():
             m_label = f"{nom} {annee}"
             if m_label not in mois_map:
-                mois_map[m_label] = []  # liste vide = pas de données
+                mois_map[m_label] = []
 
-    # Tri chronologique
     mois_tries = sorted(mois_map.keys(), key=mois_sort_key)
-    # Options : mois avec données normaux, mois sans données avec indication
     options_finales = []
     for m in mois_tries:
         if mois_map[m]:
             options_finales.append(m)
         else:
-            options_finales.append(f"{m} —")  # marqueur "pas de données"
+            options_finales.append(f"{m} —")
 
     mode = st.sidebar.radio(f"Filtrer {label_prefix} par",
                             ["Tout", "Mois", "Dates"], horizontal=True, key=f"{key_prefix}_mode")
@@ -283,7 +295,6 @@ def filtre_dates_sidebar(df, label_prefix, key_prefix, date_col="Date"):
             key=f"{key_prefix}_mois"
         )
         if not choix_mois: return [], "Toute la periode"
-        # Récupérer les vraies clés (sans le marqueur "—")
         dates_sel = []
         labels_sel = []
         for m in choix_mois:
@@ -321,10 +332,11 @@ rade_kpi = appliquer_filtre(rade_df, sel_jorf) if rade_df is not None else None
 
 cumul_jorf  = round(float(jorf_kpi["TOTAL Jorf"].sum()), 1)              if jorf_kpi is not None else 0.0
 cumul_safi  = round(float(safi_kpi["TOTAL Safi"].sum()), 1)              if safi_kpi is not None else 0.0
-cumul_rade  = round(float(rade_kpi["Engrais en attente"].sum()), 1)      if rade_kpi is not None else 0.0
-# Rade Safi : on prend TSP ML comme proxy rade safi (à adapter si source différente)
-cumul_rade_safi = round(float(safi_kpi["TSP ML"].sum()), 1)              if safi_kpi is not None else 0.0
 cumul_total = round(cumul_jorf + cumul_safi, 1)
+
+# ─── RADE : dernière valeur à date ───────────────────────────────────────────
+rade_j_val, rade_j_date = get_derniere_valeur(rade_kpi, "Engrais en attente") if rade_kpi is not None else (0.0, None)
+rade_s_val, rade_s_date = get_derniere_valeur(safi_kpi, "TSP ML") if safi_kpi is not None else (0.0, None)
 
 periode_label = f"Filtre : {label_jorf} / {label_safi}" if (sel_jorf or sel_safi) else "Toute la Periode"
 
@@ -334,25 +346,51 @@ k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     sub1 = "Export Engrais + Camions + VL" if jorf_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card jorf"><div class="kpi-label">Total Jorf</div><div class="kpi-value">{fmt_number(cumul_jorf)}</div><div class="kpi-sub">{sub1}</div></div>""", unsafe_allow_html=True)
+
 with k2:
-    sub_rade = "Engrais en attente Rade" if rade_df is not None else "Fichier non charge"
-    st.markdown(f"""<div class="kpi-card rade"><div class="kpi-label">Rade Jorf</div><div class="kpi-value">{fmt_number(cumul_rade)}</div><div class="kpi-sub">{sub_rade}</div></div>""", unsafe_allow_html=True)
+    if rade_df is not None and rade_j_date is not None:
+        rade_j_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Rade Jorf</div>
+            <div class="kpi-value">{fmt_number(rade_j_val)}</div>
+            <div class="kpi-sub">Engrais en attente</div>
+            <div class="kpi-date">📅 Derniere valeur : {rade_j_date}</div>
+        </div>"""
+    else:
+        rade_j_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Rade Jorf</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-sub">Fichier non charge</div>
+        </div>"""
+    st.markdown(rade_j_html, unsafe_allow_html=True)
+
 with k3:
     sub2 = "Export Engrais + VL Camions" if safi_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card safi"><div class="kpi-label">Total Safi</div><div class="kpi-value">{fmt_number(cumul_safi)}</div><div class="kpi-sub">{sub2}</div></div>""", unsafe_allow_html=True)
+
 with k4:
-    sub_rs = "VL Camions Safi" if safi_df is not None else "Fichier non charge"
-    st.markdown(f"""<div class="kpi-card rade"><div class="kpi-label">Rade Safi</div><div class="kpi-value">{fmt_number(cumul_rade_safi)}</div><div class="kpi-sub">{sub_rs}</div></div>""", unsafe_allow_html=True)
+    if safi_df is not None and rade_s_date is not None:
+        rade_s_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Rade Safi</div>
+            <div class="kpi-value">{fmt_number(rade_s_val)}</div>
+            <div class="kpi-sub">VL Camions Safi</div>
+            <div class="kpi-date">📅 Derniere valeur : {rade_s_date}</div>
+        </div>"""
+    else:
+        rade_s_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Rade Safi</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-sub">Fichier non charge</div>
+        </div>"""
+    st.markdown(rade_s_html, unsafe_allow_html=True)
+
 with k5:
     st.markdown(f"""<div class="kpi-card total"><div class="kpi-label">Total Jorf + Safi</div><div class="kpi-value">{fmt_number(cumul_total)}</div><div class="kpi-sub">Consolide toutes unites</div></div>""", unsafe_allow_html=True)
 
 st.divider()
 
 # ─── TABLE UNIFIEE ────────────────────────────────────────────────────────────
-# Colonnes renommées : TSP Export → Export Engrais Safi, TSP ML → ML Safi
 st.markdown('<div class="section-header total">Tableau Consolide — Toutes Donnees par Jour (KT)</div>', unsafe_allow_html=True)
 
-# En-tête groupé HTML
 st.markdown("""
 <style>
 .grp-header { display: flex; width: 100%; margin-bottom: 4px; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px; }
@@ -373,13 +411,6 @@ st.markdown("""
 any_data = jorf_df is not None or safi_df is not None or rade_df is not None
 
 if any_data:
-    def date_sort_key(d):
-        try:
-            parts = str(d).split("/")
-            return (int(parts[2]), int(parts[1]), int(parts[0]))
-        except:
-            return (9999, 99, 99)
-
     jorf_f = appliquer_filtre(jorf_df, sel_jorf) if jorf_df is not None else None
     rade_f = appliquer_filtre(rade_df, sel_jorf) if rade_df is not None else None
     safi_f = appliquer_filtre(safi_df, sel_safi) if safi_df is not None else None
@@ -393,18 +424,15 @@ if any_data:
     unified_rows = []
     for d in all_dates:
         row = {"Date": d}
-        # ── JORF détail ──
         if jorf_f is not None:
             r = jorf_f[jorf_f["Date"] == d]
             row["J_Engrais"] = round(r["Export Engrais"].sum(), 1) if not r.empty else 0.0
             row["J_Camions"] = round(r["Export Camions"].sum(), 1) if not r.empty else 0.0
             row["J_VL"]      = round(r["VL Camions"].sum(), 1)     if not r.empty else 0.0
-        # ── SAFI détail ──
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["S_Engrais"] = round(r["TSP Export"].sum(), 1) if not r.empty else 0.0
             row["S_VL"]      = round(r["TSP ML"].sum(), 1)     if not r.empty else 0.0
-        # ── TOTAUX ──
         j_tot = round(
             row.get("J_Engrais",0.0)+row.get("J_Camions",0.0)+row.get("J_VL",0.0), 1
         ) if jorf_f is not None else 0.0
@@ -414,11 +442,9 @@ if any_data:
         if jorf_f is not None: row["J_TOTAL"] = j_tot
         if safi_f is not None: row["S_TOTAL"] = s_tot
         row["TOTAL"] = round(j_tot + s_tot, 1)
-        # ── RADE JORF ──
         if rade_f is not None:
             r = rade_f[rade_f["Date"] == d]
             row["RADE_J"] = round(r["Engrais en attente"].sum(), 1) if not r.empty else 0.0
-        # ── RADE SAFI (TSP ML = mise a la mer / attente) ──
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["RADE_S"] = round(r["TSP ML"].sum(), 1) if not r.empty else 0.0
@@ -426,7 +452,6 @@ if any_data:
 
     unified_df = pd.DataFrame(unified_rows)
 
-    # Ordre explicite des colonnes
     col_order = ["Date"]
     if jorf_f is not None: col_order += ["J_Engrais", "J_Camions", "J_VL"]
     if safi_f is not None: col_order += ["S_Engrais", "S_VL"]
@@ -438,14 +463,12 @@ if any_data:
     col_order = [c for c in col_order if c in unified_df.columns]
     unified_df = unified_df[col_order]
 
-    # Ligne TOTAL GENERAL
     total_row = {"Date": "TOTAL GENERAL"}
     for col in unified_df.columns:
         if col != "Date":
             total_row[col] = round(unified_df[col].sum(), 1)
     disp_unified = pd.concat([unified_df, pd.DataFrame([total_row])], ignore_index=True)
 
-    # Config colonnes
     col_cfg = {"Date": st.column_config.TextColumn("Date")}
     if jorf_f is not None:
         col_cfg["J_Engrais"] = st.column_config.NumberColumn("Export Engrais", format="%.1f")
@@ -481,7 +504,6 @@ if any_data:
     # ─── 2 GRAPHIQUES COTE A COTE ────────────────────────────────────────────
     g_left, g_right = st.columns(2)
 
-    # GRAPHIQUE GAUCHE — Rade (barres violettes)
     with g_left:
         st.markdown('<div class="section-header rade">Rade Jorf — Engrais en Attente</div>', unsafe_allow_html=True)
         if rade_f is not None and "RADE_J" in unified_df.columns and len(unified_df) > 1:
@@ -496,11 +518,9 @@ if any_data:
         else:
             st.info("Chargez le fichier Jorf pour voir la Rade.")
 
-    # GRAPHIQUES DROITS — 2 courbes mensuelles séparées
     with g_right:
         cols_line = [c for c in ["J_TOTAL", "S_TOTAL", "TOTAL"] if c in unified_df.columns]
         if cols_line and len(unified_df) > 1:
-            # Agrégation par mois
             line_df = unified_df.copy()
             line_df["Mois"] = line_df["Date"].apply(extract_mois_label)
             line_df = line_df[line_df["Mois"] != "Inconnu"]
@@ -513,7 +533,6 @@ if any_data:
                 "TOTAL":   "Total Jorf+Safi"
             }).set_index("Mois")
 
-            # Courbe 1 : Jorf vs Safi par jour
             st.markdown('<div class="section-header jorf" style="font-size:15px;padding:7px 14px;">Total Jorf vs Total Safi par Jour</div>', unsafe_allow_html=True)
             day_js_cols = [c for c in ["J_TOTAL", "S_TOTAL"] if c in unified_df.columns]
             if day_js_cols and len(unified_df) > 1:
@@ -521,7 +540,6 @@ if any_data:
                 c_js = ["#00843D" if c == "Total Jorf" else "#1A6FA8" for c in day_js.columns]
                 st.line_chart(day_js, color=c_js)
 
-            # Courbe 2 : Total global par mois
             st.markdown('<div class="section-header total" style="font-size:15px;padding:7px 14px;">Total Jorf+Safi par Mois</div>', unsafe_allow_html=True)
             if "Total Jorf+Safi" in mois_line.columns and len(mois_line) > 0:
                 st.line_chart(mois_line[["Total Jorf+Safi"]], color="#C05A00")
