@@ -496,19 +496,32 @@ if any_data:
         else:
             st.info("Chargez le fichier Jorf pour voir la Rade.")
 
-    # GRAPHIQUE DROIT — courbe Jorf + Safi + Total par jour
+    # GRAPHIQUES DROITS — 2 courbes séparées
     with g_right:
-        st.markdown('<div class="section-header total">Jorf + Safi + Total — Evolution par Jour</div>', unsafe_allow_html=True)
         cols_line = [c for c in ["J_TOTAL", "S_TOTAL", "TOTAL"] if c in unified_df.columns]
         if cols_line and len(unified_df) > 1:
-            line_df = unified_df.set_index("Date")[cols_line].copy()
-            rename_map = {"J_TOTAL": "Jorf", "S_TOTAL": "Safi", "TOTAL": "Total"}
-            line_df = line_df.rename(columns={k: v for k, v in rename_map.items() if k in line_df.columns})
-            colors = []
-            if "Jorf"  in line_df.columns: colors.append("#00843D")
-            if "Safi"  in line_df.columns: colors.append("#1A6FA8")
-            if "Total" in line_df.columns: colors.append("#C05A00")
-            st.line_chart(line_df, color=colors)
+            line_df = unified_df.copy()
+            line_df["Mois"] = line_df["Date"].apply(extract_mois_label)
+            line_df = line_df[line_df["Mois"] != "Inconnu"]
+            mois_line = line_df.groupby("Mois")[cols_line].sum().reset_index()
+            mois_line["_sort"] = mois_line["Mois"].apply(mois_sort_key)
+            mois_line = mois_line.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+            mois_line = mois_line.rename(columns={"J_TOTAL": "Total Jorf", "S_TOTAL": "Total Safi", "TOTAL": "Total Jorf+Safi"})
+            mois_line = mois_line.set_index("Mois")
+
+            # Courbe 1 : Jorf vs Safi
+            st.markdown('<div class="section-header total" style="font-size:15px;padding:7px 14px;">Total Jorf et Total Safi</div>', unsafe_allow_html=True)
+            cols_js = [c for c in ["Total Jorf", "Total Safi"] if c in mois_line.columns]
+            if cols_js:
+                colors_js = []
+                if "Total Jorf" in cols_js: colors_js.append("#00843D")
+                if "Total Safi" in cols_js: colors_js.append("#1A6FA8")
+                st.line_chart(mois_line[cols_js], color=colors_js)
+
+            # Courbe 2 : Total global
+            st.markdown('<div class="section-header total" style="font-size:15px;padding:7px 14px;">Total Jorf + Safi</div>', unsafe_allow_html=True)
+            if "Total Jorf+Safi" in mois_line.columns:
+                st.line_chart(mois_line[["Total Jorf+Safi"]], color="#C05A00")
         else:
             st.info("Chargez les fichiers pour voir le graphique.")
 else:
