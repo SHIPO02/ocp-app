@@ -328,36 +328,21 @@ cumul_total = round(cumul_jorf + cumul_safi, 1)
 
 periode_label = f"Filtre : {label_jorf} / {label_safi}" if (sel_jorf or sel_safi) else "Toute la Periode"
 
-# ─── KPI CARDS — 2 lignes : Jorf | Safi | Total ───────────────────────────
+# ─── KPI CARDS — 1 seule ligne ───────────────────────────────────────────────
 st.markdown(f"### Cumul a Date — {periode_label}")
-
-# Ligne 1 : Jorf
-st.markdown('<div class="section-header jorf" style="font-size:14px;padding:6px 14px;margin:10px 0 6px 0;">JORF LASFAR</div>', unsafe_allow_html=True)
-k1, k2 = st.columns(2)
+k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     sub1 = "Export Engrais + Camions + VL" if jorf_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card jorf"><div class="kpi-label">Total Jorf</div><div class="kpi-value">{fmt_number(cumul_jorf)}</div><div class="kpi-sub">{sub1}</div></div>""", unsafe_allow_html=True)
 with k2:
     sub_rade = "Engrais en attente Rade" if rade_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card rade"><div class="kpi-label">Rade Jorf</div><div class="kpi-value">{fmt_number(cumul_rade)}</div><div class="kpi-sub">{sub_rade}</div></div>""", unsafe_allow_html=True)
-
-st.markdown("<div style='margin:10px 0'></div>", unsafe_allow_html=True)
-
-# Ligne 2 : Safi
-st.markdown('<div class="section-header safi" style="font-size:14px;padding:6px 14px;margin:10px 0 6px 0;">SAFI</div>', unsafe_allow_html=True)
-k3, k4 = st.columns(2)
 with k3:
-    sub2 = "Export Engrais + ML" if safi_df is not None else "Fichier non charge"
+    sub2 = "Export Engrais + VL Camions" if safi_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card safi"><div class="kpi-label">Total Safi</div><div class="kpi-value">{fmt_number(cumul_safi)}</div><div class="kpi-sub">{sub2}</div></div>""", unsafe_allow_html=True)
 with k4:
-    sub_rs = "TSP ML Safi" if safi_df is not None else "Fichier non charge"
+    sub_rs = "VL Camions Safi" if safi_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card rade"><div class="kpi-label">Rade Safi</div><div class="kpi-value">{fmt_number(cumul_rade_safi)}</div><div class="kpi-sub">{sub_rs}</div></div>""", unsafe_allow_html=True)
-
-st.markdown("<div style='margin:10px 0'></div>", unsafe_allow_html=True)
-
-# Ligne 3 : Total consolidé
-st.markdown('<div class="section-header total" style="font-size:14px;padding:6px 14px;margin:10px 0 6px 0;">CONSOLIDE</div>', unsafe_allow_html=True)
-k5, _ = st.columns([1, 1])
 with k5:
     st.markdown(f"""<div class="kpi-card total"><div class="kpi-label">Total Jorf + Safi</div><div class="kpi-value">{fmt_number(cumul_total)}</div><div class="kpi-sub">Consolide toutes unites</div></div>""", unsafe_allow_html=True)
 
