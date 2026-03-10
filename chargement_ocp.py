@@ -94,6 +94,17 @@ def is_data_sheet(name):
     norm = name.strip().lower()
     return not any(kw in norm for kw in SKIP_KEYWORDS)
 
+def read_excel_any(file):
+    """Lit un fichier Excel peu importe le format (.xlsx, .xls, .xlsm)."""
+    filename = getattr(file, 'name', '').lower()
+    if filename.endswith('.xls') and not filename.endswith('.xlsx') and not filename.endswith('.xlsm'):
+        # Ancien format binaire .xls — nécessite xlrd
+        engine = 'xlrd'
+    else:
+        # .xlsx et .xlsm sont gérés par openpyxl
+        engine = 'openpyxl'
+    return engine
+
 # ─── HEADER ──────────────────────────────────────────────────────────────────
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
@@ -109,14 +120,17 @@ st.divider()
 
 # ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 st.sidebar.header("Chargement des fichiers")
-file_jorf = st.sidebar.file_uploader("Fichier Jorf", type=["xlsx"], key="jorf")
-file_safi = st.sidebar.file_uploader("Fichier Safi", type=["xlsx"], key="safi")
+# Accepte .xlsx, .xls et .xlsm
+EXCEL_TYPES = ["xlsx", "xls", "xlsm"]
+file_jorf = st.sidebar.file_uploader("Fichier Jorf", type=EXCEL_TYPES, key="jorf")
+file_safi = st.sidebar.file_uploader("Fichier Safi", type=EXCEL_TYPES, key="safi")
 
 # ─── PARSE JORF ──────────────────────────────────────────────────────────────
 jorf_df = None
 if file_jorf:
     try:
-        df_raw = pd.read_excel(file_jorf, sheet_name='EXPORT', header=None)
+        engine = read_excel_any(file_jorf)
+        df_raw = pd.read_excel(file_jorf, sheet_name='EXPORT', header=None, engine=engine)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
         for r in range(len(df_raw)):
             lbl = " ".join(df_raw.iloc[r, 0:3].astype(str)).upper()
@@ -142,7 +156,8 @@ if file_jorf:
 rade_df = None
 if file_jorf:
     try:
-        df_rade = pd.read_excel(file_jorf, sheet_name='Sit Navire', header=None)
+        engine = read_excel_any(file_jorf)
+        df_rade = pd.read_excel(file_jorf, sheet_name='Sit Navire', header=None, engine=engine)
         rows_rade = []
         for r in range(len(df_rade)):
             date_val = df_rade.iloc[r, 1]
@@ -164,7 +179,8 @@ if file_jorf:
 safi_df = None
 if file_safi:
     try:
-        xl = pd.ExcelFile(file_safi)
+        engine = read_excel_any(file_safi)
+        xl = pd.ExcelFile(file_safi, engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
         def parse_mois_annee(sheet_name):
@@ -186,7 +202,7 @@ if file_safi:
             if not is_data_sheet(sheet): continue
             mois_num, annee = parse_mois_annee(sheet)
             if mois_num is None or annee is None: continue
-            dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None)
+            dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None, engine=engine)
             tsp_exp_col = COL_TSP_EXP; tsp_ml_col = COL_TSP_ML
             if dfs.shape[1] <= COL_TSP_ML:
                 found_exp = False
@@ -432,4 +448,5 @@ if jorf_df is not None or safi_df is not None:
         st.info("Pas encore de donnees pour le graphique mensuel.")
 else:
     st.info("Chargez au moins un fichier pour voir le total consolide.")
+
 
