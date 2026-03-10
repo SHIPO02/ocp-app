@@ -342,7 +342,7 @@ periode_label = f"Filtre : {label_jorf} / {label_safi}" if (sel_jorf or sel_safi
 
 # ─── KPI CARDS — 1 seule ligne ───────────────────────────────────────────────
 st.markdown(f"### Cumul a Date — {periode_label}")
-k1, k2, k3, k4, k5 = st.columns(5)
+k1, k2, k3, k4, k5, k6 = st.columns(6)
 with k1:
     sub1 = "Export Engrais + Camions + VL" if jorf_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card jorf"><div class="kpi-label">Total Jorf</div><div class="kpi-value">{fmt_number(cumul_jorf)}</div><div class="kpi-sub">{sub1}</div></div>""", unsafe_allow_html=True)
@@ -384,6 +384,26 @@ with k4:
     st.markdown(rade_s_html, unsafe_allow_html=True)
 
 with k5:
+    # Total Rade = dernière valeur Rade Jorf + dernière valeur Rade Safi
+    rade_total_val = round((rade_j_val if rade_j_date is not None else 0.0) +
+                           (rade_s_val if rade_s_date is not None else 0.0), 1)
+    rade_total_date = rade_j_date or rade_s_date
+    if rade_total_date is not None:
+        rade_total_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Total Rade</div>
+            <div class="kpi-value">{fmt_number(rade_total_val)}</div>
+            <div class="kpi-sub">Rade Jorf + Rade Safi</div>
+            <div class="kpi-date">📅 Derniere valeur : {rade_total_date}</div>
+        </div>"""
+    else:
+        rade_total_html = f"""<div class="kpi-card rade">
+            <div class="kpi-label">Total Rade</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-sub">Fichiers non charges</div>
+        </div>"""
+    st.markdown(rade_total_html, unsafe_allow_html=True)
+
+with k6:
     st.markdown(f"""<div class="kpi-card total"><div class="kpi-label">Total Jorf + Safi</div><div class="kpi-value">{fmt_number(cumul_total)}</div><div class="kpi-sub">Consolide toutes unites</div></div>""", unsafe_allow_html=True)
 
 st.divider()
@@ -448,6 +468,11 @@ if any_data:
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["RADE_S"] = round(r["TSP ML"].sum(), 1) if not r.empty else 0.0
+        # ── TOTAL RADE ──
+        rade_j_row = row.get("RADE_J", 0.0) if rade_f is not None else 0.0
+        rade_s_row = row.get("RADE_S", 0.0) if safi_f is not None else 0.0
+        if rade_f is not None or safi_f is not None:
+            row["RADE_TOTAL"] = round(rade_j_row + rade_s_row, 1)
         unified_rows.append(row)
 
     unified_df = pd.DataFrame(unified_rows)
@@ -460,6 +485,7 @@ if any_data:
     col_order += ["TOTAL"]
     if rade_f is not None: col_order += ["RADE_J"]
     if safi_f is not None: col_order += ["RADE_S"]
+    if rade_f is not None or safi_f is not None: col_order += ["RADE_TOTAL"]
     col_order = [c for c in col_order if c in unified_df.columns]
     unified_df = unified_df[col_order]
 
@@ -486,6 +512,8 @@ if any_data:
         col_cfg["RADE_J"] = st.column_config.NumberColumn("Rade Jorf",  format="%.1f")
     if safi_f is not None:
         col_cfg["RADE_S"] = st.column_config.NumberColumn("Rade Safi",  format="%.1f")
+    if rade_f is not None or safi_f is not None:
+        col_cfg["RADE_TOTAL"] = st.column_config.NumberColumn("Total Rade", format="%.1f")
 
     st.dataframe(disp_unified, use_container_width=True, hide_index=True,
         height=min(700, 45 + 35 * len(disp_unified)),
