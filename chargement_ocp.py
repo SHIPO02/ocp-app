@@ -103,7 +103,7 @@ with col_logo:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
     st.title("Suivi chargement export")
-    st.markdown("##### Reporting Consolide — Jorf Lasfar & Safi &nbsp;|&nbsp; Valeurs en milliers de tonnes (KT)")
+    st.markdown("##### Reporting Consolide — Jorf Lasfar & Safi &nbsp;|&nbsp; Valeurs en milliers de tonnes")
 
 st.divider()
 
@@ -330,16 +330,16 @@ periode_label = f"Filtre : {label_jorf} / {label_safi}" if (sel_jorf or sel_safi
 st.markdown(f"### Cumul a Date — {periode_label}")
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    sub1 = "Export Engrais + Camions + VL (KT)" if jorf_df is not None else "Fichier non charge"
+    sub1 = "Export Engrais + Camions + VL" if jorf_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card jorf"><div class="kpi-label">Total Jorf Lasfar</div><div class="kpi-value">{fmt_number(cumul_jorf)}</div><div class="kpi-sub">{sub1}</div></div>""", unsafe_allow_html=True)
 with c2:
-    sub_rade = "Engrais en attente (KT)" if rade_df is not None else "Fichier non charge"
+    sub_rade = "Engrais en attente" if rade_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card rade"><div class="kpi-label">Rade Jorf</div><div class="kpi-value">{fmt_number(cumul_rade)}</div><div class="kpi-sub">{sub_rade}</div></div>""", unsafe_allow_html=True)
 with c3:
-    sub2 = "TSP Export + TSP ML (KT)" if safi_df is not None else "Fichier non charge"
+    sub2 = "TSP Export + TSP ML" if safi_df is not None else "Fichier non charge"
     st.markdown(f"""<div class="kpi-card safi"><div class="kpi-label">Total Safi</div><div class="kpi-value">{fmt_number(cumul_safi)}</div><div class="kpi-sub">{sub2}</div></div>""", unsafe_allow_html=True)
 with c4:
-    st.markdown(f"""<div class="kpi-card total"><div class="kpi-label">Total Jorf + Safi</div><div class="kpi-value">{fmt_number(cumul_total)}</div><div class="kpi-sub">Consolide toutes unites (KT)</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="kpi-card total"><div class="kpi-label">Total Jorf + Safi</div><div class="kpi-value">{fmt_number(cumul_total)}</div><div class="kpi-sub">Consolide toutes unites</div></div>""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -372,24 +372,20 @@ if any_data:
     unified_rows = []
     for d in all_dates:
         row = {"Date": d}
-        # Colonnes Jorf
         if jorf_f is not None:
             r = jorf_f[jorf_f["Date"] == d]
             row["Export Engrais"] = round(r["Export Engrais"].sum(), 1) if not r.empty else 0.0
             row["Export Camions"] = round(r["Export Camions"].sum(), 1) if not r.empty else 0.0
             row["VL Camions"]     = round(r["VL Camions"].sum(), 1)     if not r.empty else 0.0
             row["TOTAL Jorf"]     = round(r["TOTAL Jorf"].sum(), 1)     if not r.empty else 0.0
-        # Colonne Rade
         if rade_f is not None:
             r = rade_f[rade_f["Date"] == d]
             row["Engrais en attente"] = round(r["Engrais en attente"].sum(), 1) if not r.empty else 0.0
-        # Colonnes Safi
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["TSP Export"] = round(r["TSP Export"].sum(), 1) if not r.empty else 0.0
             row["TSP ML"]     = round(r["TSP ML"].sum(), 1)     if not r.empty else 0.0
             row["TOTAL Safi"] = round(r["TOTAL Safi"].sum(), 1) if not r.empty else 0.0
-        # Total global
         row["TOTAL Jorf+Safi"] = round(
             row.get("TOTAL Jorf", 0.0) + row.get("TOTAL Safi", 0.0), 1
         )
@@ -404,20 +400,20 @@ if any_data:
             total_row[col] = round(unified_df[col].sum(), 1)
     disp_unified = pd.concat([unified_df, pd.DataFrame([total_row])], ignore_index=True)
 
-    # Config colonnes dynamique
+    # Config colonnes
     col_cfg = {"Date": st.column_config.TextColumn("Date")}
     if jorf_f is not None:
-        col_cfg["Export Engrais"] = st.column_config.NumberColumn("Export Engrais (KT)", format="%.1f")
-        col_cfg["Export Camions"] = st.column_config.NumberColumn("Export Camions (KT)", format="%.1f")
-        col_cfg["VL Camions"]     = st.column_config.NumberColumn("VL Camions (KT)",     format="%.1f")
-        col_cfg["TOTAL Jorf"]     = st.column_config.NumberColumn("TOTAL Jorf (KT)",     format="%.1f")
+        col_cfg["Export Engrais"] = st.column_config.NumberColumn("Export Engrais", format="%.1f")
+        col_cfg["Export Camions"] = st.column_config.NumberColumn("Export Camions", format="%.1f")
+        col_cfg["VL Camions"]     = st.column_config.NumberColumn("VL Camions",     format="%.1f")
+        col_cfg["TOTAL Jorf"]     = st.column_config.NumberColumn("TOTAL Jorf",     format="%.1f")
     if rade_f is not None:
-        col_cfg["Engrais en attente"] = st.column_config.NumberColumn("Rade — Engrais Attente (KT)", format="%.1f")
+        col_cfg["Engrais en attente"] = st.column_config.NumberColumn("Rade Engrais Attente", format="%.1f")
     if safi_f is not None:
-        col_cfg["TSP Export"] = st.column_config.NumberColumn("TSP Export (KT)", format="%.1f")
-        col_cfg["TSP ML"]     = st.column_config.NumberColumn("TSP ML (KT)",     format="%.1f")
-        col_cfg["TOTAL Safi"] = st.column_config.NumberColumn("TOTAL Safi (KT)", format="%.1f")
-    col_cfg["TOTAL Jorf+Safi"] = st.column_config.NumberColumn("TOTAL Jorf+Safi (KT)", format="%.1f")
+        col_cfg["TSP Export"] = st.column_config.NumberColumn("TSP Export", format="%.1f")
+        col_cfg["TSP ML"]     = st.column_config.NumberColumn("TSP ML",     format="%.1f")
+        col_cfg["TOTAL Safi"] = st.column_config.NumberColumn("TOTAL Safi", format="%.1f")
+    col_cfg["TOTAL Jorf+Safi"] = st.column_config.NumberColumn("TOTAL Jorf+Safi", format="%.1f")
 
     st.dataframe(disp_unified, use_container_width=True, hide_index=True,
         height=min(700, 45 + 35 * len(disp_unified)),
@@ -431,8 +427,30 @@ if any_data:
     with col_copy3:
         copier_ligne_btn(unified_df, "TOTAL Jorf+Safi", "Total Jorf+Safi", "copy_total")
 
-    # Graphique mensuel
-    st.markdown("#### Evolution mensuelle — Jorf vs Safi (KT)")
+    st.divider()
+
+    # ─── GRAPHIQUES ───────────────────────────────────────────────────────────
+    # Courbes Jorf
+    if jorf_f is not None and len(unified_df) > 1:
+        st.markdown('<div class="section-header jorf">Evolution Jorf Lasfar</div>', unsafe_allow_html=True)
+        cols_jorf = [c for c in ["Export Engrais", "Export Camions", "VL Camions"] if c in unified_df.columns]
+        if cols_jorf:
+            chart_jorf = unified_df.set_index("Date")[cols_jorf]
+            st.line_chart(chart_jorf, color=["#00843D", "#4CAF50", "#A5D6A7"])
+        st.markdown('<div class="section-header jorf" style="font-size:15px;padding:7px 14px;">Total Jorf par jour</div>', unsafe_allow_html=True)
+        st.area_chart(unified_df.set_index("Date")[["TOTAL Jorf"]], color="#00843D")
+
+    # Courbes Safi
+    if safi_f is not None and len(unified_df) > 1:
+        st.markdown('<div class="section-header safi">Evolution Safi</div>', unsafe_allow_html=True)
+        cols_safi = [c for c in ["TSP Export", "TSP ML"] if c in unified_df.columns]
+        if cols_safi:
+            st.line_chart(unified_df.set_index("Date")[cols_safi], color=["#1A6FA8", "#64B5F6"])
+        st.markdown('<div class="section-header safi" style="font-size:15px;padding:7px 14px;">Total Safi par jour</div>', unsafe_allow_html=True)
+        st.area_chart(unified_df.set_index("Date")[["TOTAL Safi"]], color="#1A6FA8")
+
+    # Graphique mensuel comparatif
+    st.markdown('<div class="section-header total">Evolution Mensuelle — Jorf vs Safi</div>', unsafe_allow_html=True)
     chart_df = unified_df.copy()
     chart_df["Mois"] = chart_df["Date"].apply(extract_mois_label)
     chart_df = chart_df[chart_df["Mois"] != "Inconnu"]
@@ -443,7 +461,7 @@ if any_data:
         mois_tot = mois_tot.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
         mois_tot = mois_tot[mois_tot[cols_chart].sum(axis=1) > 0]
         if len(mois_tot) > 0:
-            st.bar_chart(mois_tot.set_index("Mois")[cols_chart])
+            st.bar_chart(mois_tot.set_index("Mois")[cols_chart], color=["#00843D", "#1A6FA8"])
         else:
             st.info("Pas encore de donnees pour le graphique mensuel.")
 else:
