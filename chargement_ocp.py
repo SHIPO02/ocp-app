@@ -12,16 +12,16 @@ st.markdown("""
         html, body, [class*="css"] { font-family: 'Barlow', sans-serif; }
         .stApp { background-color: #F4F7F5; }
         h1, h2, h3 { color: var(--ocp-dark) !important; font-family: 'Barlow Condensed', sans-serif !important; }
-        .kpi-card { border-radius: 12px; padding: 20px 24px; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden; height: 140px; display: flex; flex-direction: column; justify-content: center; }
-        .kpi-card::before { content: ''; position: absolute; top: -20px; right: -20px; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+        .kpi-card { border-radius: 12px; padding: 16px 18px; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden; min-height: 160px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
+        .kpi-card::before { content: ''; position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.1); }
         .kpi-card.jorf  { background: linear-gradient(135deg, #00843D, #005C2A); }
         .kpi-card.safi  { background: linear-gradient(135deg, #1A6FA8, #0D4A73); }
         .kpi-card.total { background: linear-gradient(135deg, #C05A00, #8A3F00); }
         .kpi-card.rade  { background: linear-gradient(135deg, #6B3FA0, #4A2A73); }
-        .kpi-label { font-size: 12px; font-weight: 600; opacity: 0.85; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
-        .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 38px; font-weight: 700; line-height: 1; }
-        .kpi-sub   { font-size: 11px; opacity: 0.7; margin-top: 4px; }
-        .kpi-date  { font-size: 11px; opacity: 0.85; margin-top: 6px; font-weight: 600; letter-spacing: 0.5px; }
+        .kpi-label { font-size: 11px; font-weight: 700; opacity: 0.9; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+        .kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 32px; font-weight: 700; line-height: 1.1; margin: 4px 0; word-break: break-word; }
+        .kpi-sub   { font-size: 10px; opacity: 0.75; margin-top: 2px; line-height: 1.3; }
+        .kpi-date  { font-size: 10px; opacity: 0.9; margin-top: 4px; font-weight: 600; letter-spacing: 0.3px; }
         .section-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; margin: 20px 0 10px 0; font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: white; }
         .section-header.jorf  { background: var(--jorf-color); }
         .section-header.safi  { background: var(--safi-color); }
