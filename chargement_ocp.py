@@ -97,19 +97,14 @@ def is_data_sheet(name):
     return not any(kw in name.strip().lower() for kw in SKIP_KEYWORDS)
 
 def read_excel_any(file):
-    """Remet le curseur au début et retourne le bon moteur selon l'extension."""
-    try:
-        file.seek(0)
-    except Exception:
-        pass
+    """Retourne le bon moteur selon l'extension du fichier."""
     filename = getattr(file, 'name', '').lower().strip()
-    # openpyxl en priorité pour .xlsx et .xlsm
-    if filename.endswith('.xlsx') or filename.endswith('.xlsm'):
+    if filename.endswith('.xlsb'):
+        return 'pyxlsb'
+    if filename.endswith('.xlsm') or filename.endswith('.xlsx'):
         return 'openpyxl'
-    # xlrd uniquement pour les vrais .xls (ancien format binaire)
     if filename.endswith('.xls'):
         return 'xlrd'
-    # Par défaut openpyxl
     return 'openpyxl'
 
 def get_derniere_valeur(df, col_valeur, col_date="Date"):
@@ -201,7 +196,14 @@ if file_safi:
         file_safi.seek(0)
         safi_bytes = file_safi.read()  # lit les bytes une seule fois
         filename_safi = getattr(file_safi, 'name', '').lower().strip()
-        engine = 'xlrd' if (filename_safi.endswith('.xls') and not filename_safi.endswith('.xlsx') and not filename_safi.endswith('.xlsm')) else 'openpyxl'
+        if filename_safi.endswith('.xlsb'):
+            engine = 'pyxlsb'
+        elif filename_safi.endswith('.xlsm') or filename_safi.endswith('.xlsx'):
+            engine = 'openpyxl'
+        elif filename_safi.endswith('.xls'):
+            engine = 'xlrd'
+        else:
+            engine = 'openpyxl'
         xl = pd.ExcelFile(io.BytesIO(safi_bytes), engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
@@ -548,4 +550,3 @@ if any_data:
             st.info("Chargez les fichiers pour voir le graphique.")
 else:
     st.info("Chargez au moins un fichier pour voir le tableau consolide.")
-    
