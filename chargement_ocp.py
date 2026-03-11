@@ -12,7 +12,7 @@ st.markdown("""
         html, body, [class*="css"] { font-family: 'Barlow', sans-serif; }
         .stApp { background-color: #F4F7F5; }
         h1, h2, h3 { color: var(--ocp-dark) !important; font-family: 'Barlow Condensed', sans-serif !important; }
-        .kpi-card { border-radius: 12px; padding: 20px 24px; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden; }
+        .kpi-card { border-radius: 12px; padding: 20px 24px; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.12); position: relative; overflow: hidden; height: 140px; display: flex; flex-direction: column; justify-content: center; }
         .kpi-card::before { content: ''; position: absolute; top: -20px; right: -20px; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.1); }
         .kpi-card.jorf  { background: linear-gradient(135deg, #00843D, #005C2A); }
         .kpi-card.safi  { background: linear-gradient(135deg, #1A6FA8, #0D4A73); }
@@ -128,7 +128,7 @@ with col_logo:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
     st.title("Suivi chargement Manufacturing")
-    st.markdown("##### Reporting Consolide — Jorf Lasfar & Safi &nbsp;|&nbsp; Valeurs en milliers de tonnes")
+    st.markdown("##### Jorf Lasfar & Safi")
 
 st.divider()
 
