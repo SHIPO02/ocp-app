@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import os
+import io
 
 st.set_page_config(page_title="OCP - Suivi chargement Manufacturing", layout="wide")
 
@@ -96,19 +97,50 @@ SKIP_KEYWORDS = ["total","recap","recapitulatif","annee","annuel","bilan","synth
 def is_data_sheet(name):
     return not any(kw in name.strip().lower() for kw in SKIP_KEYWORDS)
 
+def detect_engine(raw_bytes):
+    """
+    Essaie plusieurs engines dans l'ordre jusqu'à trouver celui qui fonctionne.
+    Retourne le nom de l'engine compatible.
+    """
+    engines_to_try = ['openpyxl', 'pyxlsb', 'calamine']
+    for eng in engines_to_try:
+        try:
+            pd.ExcelFile(io.BytesIO(raw_bytes), engine=eng)
+            return eng
+        except Exception:
+            continue
+    raise ValueError("Aucun engine ne peut lire ce fichier. Vérifiez le format (.xlsx, .xlsb, .xls, .xlsm).")
+
 def read_file_bytes(file):
-    """Lit les bytes du fichier uploadé et retourne (bytes, engine)."""
-    import io
+    """
+    Lit les bytes du fichier uploadé.
+    Essaie d'abord de détecter l'engine via l'extension,
+    puis fait un fallback automatique si ça ne marche pas.
+    """
     file.seek(0)
     raw = file.read()
     filename = getattr(file, 'name', '').lower().strip()
+
+    # Détection par extension
     if filename.endswith('.xlsb'):
         return raw, 'pyxlsb'
     if filename.endswith('.xlsm') or filename.endswith('.xlsx'):
-        return raw, 'openpyxl'
+        # Vérifie que openpyxl fonctionne vraiment, sinon fallback
+        try:
+            pd.ExcelFile(io.BytesIO(raw), engine='openpyxl')
+            return raw, 'openpyxl'
+        except Exception:
+            pass
     if filename.endswith('.xls'):
-        return raw, 'calamine'  # calamine supporte .xls sans xlrd
-    return raw, 'openpyxl'
+        try:
+            pd.ExcelFile(io.BytesIO(raw), engine='calamine')
+            return raw, 'calamine'
+        except Exception:
+            pass
+
+    # Fallback : auto-détection tous engines
+    engine = detect_engine(raw)
+    return raw, engine
 
 def get_derniere_valeur(df, col_valeur, col_date="Date"):
     """Retourne (valeur, date) de la dernière ligne non-nulle triée par date."""
@@ -122,7 +154,7 @@ def get_derniere_valeur(df, col_valeur, col_date="Date"):
     last = tmp.iloc[-1]
     return round(float(last[col_valeur]), 1), last[col_date]
 
-# HEADER
+# ─── HEADER ──────────────────────────────────────────────────────────────────
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     if os.path.exists("logo_ocp.png"):
@@ -135,17 +167,17 @@ with col_title:
 
 st.divider()
 
-# SIDEBAR
+# ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 st.sidebar.header("Chargement des fichiers")
-EXCEL_TYPES = ["xlsx", "xls", "xlsm"]
+EXCEL_TYPES = ["xlsx", "xls", "xlsm", "xlsb"]
 file_jorf = st.sidebar.file_uploader("Fichier Jorf", type=EXCEL_TYPES, key="jorf")
 file_safi = st.sidebar.file_uploader("Fichier Safi", type=EXCEL_TYPES, key="safi")
 
-# PARSE JORF
+# ─── PARSE JORF ──────────────────────────────────────────────────────────────
 jorf_df = None
+jorf_bytes = None
 if file_jorf:
     try:
-        import io
         jorf_bytes, engine = read_file_bytes(file_jorf)
         df_raw = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='EXPORT', header=None, engine=engine)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
@@ -169,11 +201,12 @@ if file_jorf:
     except Exception as e:
         st.sidebar.error(f"Erreur Jorf : {e}")
 
-# PARSE RADE
+# ─── PARSE RADE ──────────────────────────────────────────────────────────────
 rade_df = None
-if file_jorf:
+if file_jorf and jorf_bytes is not None:
     try:
-        engine_rade = 'openpyxl'
+        # Réutilise le même engine détecté pour Jorf
+        _, engine_rade = read_file_bytes(file_jorf)
         df_rade = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='Sit Navire', header=None, engine=engine_rade)
         rows_rade = []
         for r in range(len(df_rade)):
@@ -188,13 +221,13 @@ if file_jorf:
     except:
         pass
 
-# PARSE SAFI
+# ─── PARSE SAFI ──────────────────────────────────────────────────────────────
 safi_df = None
 if file_safi:
     try:
-        import io
         safi_bytes, engine = read_file_bytes(file_safi)
         xl = pd.ExcelFile(io.BytesIO(safi_bytes), engine=engine)
+
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
         def normaliser(s):
@@ -260,10 +293,12 @@ if file_safi:
                              "TSP Export": tsp_exp, "TSP ML": tsp_ml,
                              "TOTAL Safi": round(tsp_exp + tsp_ml, 1)})
         safi_df = pd.DataFrame(rows) if rows else None
+        if safi_df is None:
+            st.sidebar.warning("Safi : aucune feuille mensuelle détectée (vérifiez les noms d'onglets).")
     except Exception as e:
         st.sidebar.error(f"Erreur Safi : {e}")
 
-# FILTRES
+# ─── FILTRES ─────────────────────────────────────────────────────────────────
 st.sidebar.divider()
 st.sidebar.header("Filtrage")
 
@@ -336,9 +371,9 @@ def appliquer_filtre(df, sel, col="Date"):
     return df[df[col].isin(sel)]
 
 # ─── CUMULS reactifs au filtre ───────────────────────────────────────────────
-jorf_kpi = appliquer_filtre(jorf_df, sel_jorf) if jorf_df is not None else None
-safi_kpi = appliquer_filtre(safi_df, sel_safi) if safi_df is not None else None
-rade_kpi = appliquer_filtre(rade_df, sel_jorf) if rade_df is not None else None
+jorf_kpi  = appliquer_filtre(jorf_df, sel_jorf) if jorf_df is not None else None
+safi_kpi  = appliquer_filtre(safi_df, sel_safi) if safi_df is not None else None
+rade_kpi  = appliquer_filtre(rade_df, sel_jorf) if rade_df is not None else None
 
 cumul_jorf  = round(float(jorf_kpi["TOTAL Jorf"].sum()), 1) if jorf_kpi is not None else 0.0
 cumul_safi  = round(float(safi_kpi["TOTAL Safi"].sum()), 1) if safi_kpi is not None else 0.0
@@ -350,7 +385,7 @@ rade_s_val, rade_s_date = get_derniere_valeur(safi_kpi, "TSP ML") if safi_kpi is
 
 periode_label = f"Filtre : {label_jorf} / {label_safi}" if (sel_jorf or sel_safi) else "Toute la Periode"
 
-# ─── KPI CARDS — 1 seule ligne ───────────────────────────────────────────────
+# ─── KPI CARDS ───────────────────────────────────────────────────────────────
 st.markdown(f"### Cumul a Date — {periode_label}")
 k1, k2, k3, k4 = st.columns(4)
 with k1:
