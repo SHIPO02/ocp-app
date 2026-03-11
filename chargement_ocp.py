@@ -147,10 +147,12 @@ file_safi = st.sidebar.file_uploader("Fichier Safi", type=EXCEL_TYPES, key="safi
 jorf_df = None
 if file_jorf:
     try:
-        file_jorf.seek(0)  # ← remet le curseur au début
+        import io
+        file_jorf.seek(0)
         engine = read_excel_any(file_jorf)
-        file_jorf.seek(0)  # ← remet à nouveau avant la lecture
-        df_raw = pd.read_excel(file_jorf, sheet_name='EXPORT', header=None, engine=engine)
+        file_jorf.seek(0)
+        jorf_bytes = file_jorf.read()  # ← lit les bytes une seule fois
+        df_raw = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='EXPORT', header=None, engine=engine)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
         for r in range(len(df_raw)):
             lbl = " ".join(df_raw.iloc[r, 0:3].astype(str)).upper()
@@ -176,10 +178,8 @@ if file_jorf:
 rade_df = None
 if file_jorf:
     try:
-        file_jorf.seek(0)  # ← remet le curseur au début
-        engine = read_excel_any(file_jorf)
-        file_jorf.seek(0)  # ← remet à nouveau avant la lecture
-        df_rade = pd.read_excel(file_jorf, sheet_name='Sit Navire', header=None, engine=engine)
+        engine_rade = read_excel_any(file_jorf)
+        df_rade = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='Sit Navire', header=None, engine=engine_rade)
         rows_rade = []
         for r in range(len(df_rade)):
             date_val = df_rade.iloc[r, 1]
@@ -197,10 +197,12 @@ if file_jorf:
 safi_df = None
 if file_safi:
     try:
-        file_safi.seek(0)  # ← remet le curseur au début
+        file_safi.seek(0)
         engine = read_excel_any(file_safi)
-        file_safi.seek(0)  # ← remet à nouveau avant la lecture
-        xl = pd.ExcelFile(file_safi, engine=engine)
+        file_safi.seek(0)
+        safi_bytes = file_safi.read()  # ← lit les bytes une seule fois
+        import io
+        xl = pd.ExcelFile(io.BytesIO(safi_bytes), engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
         def normaliser(s):
@@ -242,7 +244,7 @@ if file_safi:
             mois_num, annee = parse_mois_annee(sheet)
             if mois_num is None or annee is None: continue
             file_safi.seek(0)  # ← remet avant chaque lecture de feuille
-            dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None, engine=engine)
+            dfs = pd.read_excel(io.BytesIO(safi_bytes), sheet_name=sheet, header=None, engine=engine)
             tsp_exp_col = COL_TSP_EXP; tsp_ml_col = COL_TSP_ML
             if dfs.shape[1] <= COL_TSP_ML:
                 found_exp = False
