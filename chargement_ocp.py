@@ -102,9 +102,14 @@ def read_excel_any(file):
         file.seek(0)
     except Exception:
         pass
-    filename = getattr(file, 'name', '').lower()
-    if filename.endswith('.xls') and not filename.endswith('.xlsx') and not filename.endswith('.xlsm'):
+    filename = getattr(file, 'name', '').lower().strip()
+    # openpyxl en priorité pour .xlsx et .xlsm
+    if filename.endswith('.xlsx') or filename.endswith('.xlsm'):
+        return 'openpyxl'
+    # xlrd uniquement pour les vrais .xls (ancien format binaire)
+    if filename.endswith('.xls'):
         return 'xlrd'
+    # Par défaut openpyxl
     return 'openpyxl'
 
 def get_derniere_valeur(df, col_valeur, col_date="Date"):
