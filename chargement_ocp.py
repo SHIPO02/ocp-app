@@ -197,11 +197,11 @@ if file_jorf:
 safi_df = None
 if file_safi:
     try:
-        file_safi.seek(0)
-        engine = read_excel_any(file_safi)
-        file_safi.seek(0)
-        safi_bytes = file_safi.read()  # ← lit les bytes une seule fois
         import io
+        file_safi.seek(0)
+        safi_bytes = file_safi.read()  # lit les bytes une seule fois
+        filename_safi = getattr(file_safi, 'name', '').lower().strip()
+        engine = 'xlrd' if (filename_safi.endswith('.xls') and not filename_safi.endswith('.xlsx') and not filename_safi.endswith('.xlsm')) else 'openpyxl'
         xl = pd.ExcelFile(io.BytesIO(safi_bytes), engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
@@ -243,7 +243,6 @@ if file_safi:
             if not is_data_sheet(sheet): continue
             mois_num, annee = parse_mois_annee(sheet)
             if mois_num is None or annee is None: continue
-            file_safi.seek(0)  # ← remet avant chaque lecture de feuille
             dfs = pd.read_excel(io.BytesIO(safi_bytes), sheet_name=sheet, header=None, engine=engine)
             tsp_exp_col = COL_TSP_EXP; tsp_ml_col = COL_TSP_ML
             if dfs.shape[1] <= COL_TSP_ML:
@@ -549,3 +548,4 @@ if any_data:
             st.info("Chargez les fichiers pour voir le graphique.")
 else:
     st.info("Chargez au moins un fichier pour voir le tableau consolide.")
+    
