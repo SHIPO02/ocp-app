@@ -2,6 +2,7 @@ streamlit
 pandas
 openpyxl
 xlrd>=2.0.1
-pyxlsb
 python-docx
+pyxlsb
+python-calamine
 
