@@ -96,16 +96,42 @@ SKIP_KEYWORDS = ["total","recap","recapitulatif","annee","annuel","bilan","synth
 def is_data_sheet(name):
     return not any(kw in name.strip().lower() for kw in SKIP_KEYWORDS)
 
-def read_excel_any(file):
-    """Retourne le bon moteur selon l'extension du fichier."""
+def read_file_bytes(file):
+    """Lit les bytes du fichier uploadé et retourne (bytes, engine)."""
+    import io
+    file.seek(0)
+    raw = file.read()
     filename = getattr(file, 'name', '').lower().strip()
     if filename.endswith('.xlsb'):
-        return 'pyxlsb'
-    if filename.endswith('.xlsm') or filename.endswith('.xlsx'):
-        return 'openpyxl'
-    if filename.endswith('.xls'):
-        return 'xlrd'
-    return 'openpyxl'
+        return raw, 'pyxlsb'
+    if filename.endswith('.xls') and not filename.endswith('.xlsx'):
+        # Convertir .xls -> .xlsx en mémoire via xlrd+openpyxl
+        try:
+            import xlrd
+            import openpyxl
+            wb_old = xlrd.open_workbook(file_contents=raw)
+            wb_new = openpyxl.Workbook()
+            wb_new.remove(wb_new.active)
+            for sheet_name in wb_old.sheet_names():
+                ws_old = wb_old.sheet_by_name(sheet_name)
+                ws_new = wb_new.create_sheet(title=sheet_name)
+                for row in range(ws_old.nrows):
+                    for col in range(ws_old.ncols):
+                        cell = ws_old.cell(row, col)
+                        import xlrd as xlrd2
+                        if cell.ctype == xlrd2.XL_CELL_DATE:
+                            import datetime
+                            val = xlrd2.xldate_as_datetime(cell.value, wb_old.datemode)
+                        else:
+                            val = cell.value
+                        ws_new.cell(row+1, col+1, val)
+            out = io.BytesIO()
+            wb_new.save(out)
+            out.seek(0)
+            return out.read(), 'openpyxl'
+        except Exception as e:
+            raise Exception(f"Impossible de lire le fichier .xls : {e}")
+    return raw, 'openpyxl'
 
 def get_derniere_valeur(df, col_valeur, col_date="Date"):
     """Retourne (valeur, date) de la dernière ligne non-nulle triée par date."""
@@ -143,10 +169,7 @@ jorf_df = None
 if file_jorf:
     try:
         import io
-        file_jorf.seek(0)
-        engine = read_excel_any(file_jorf)
-        file_jorf.seek(0)
-        jorf_bytes = file_jorf.read()  # ← lit les bytes une seule fois
+        jorf_bytes, engine = read_file_bytes(file_jorf)
         df_raw = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='EXPORT', header=None, engine=engine)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
         for r in range(len(df_raw)):
@@ -173,7 +196,7 @@ if file_jorf:
 rade_df = None
 if file_jorf:
     try:
-        engine_rade = read_excel_any(file_jorf)
+        engine_rade = 'openpyxl'
         df_rade = pd.read_excel(io.BytesIO(jorf_bytes), sheet_name='Sit Navire', header=None, engine=engine_rade)
         rows_rade = []
         for r in range(len(df_rade)):
@@ -193,17 +216,7 @@ safi_df = None
 if file_safi:
     try:
         import io
-        file_safi.seek(0)
-        safi_bytes = file_safi.read()  # lit les bytes une seule fois
-        filename_safi = getattr(file_safi, 'name', '').lower().strip()
-        if filename_safi.endswith('.xlsb'):
-            engine = 'pyxlsb'
-        elif filename_safi.endswith('.xlsm') or filename_safi.endswith('.xlsx'):
-            engine = 'openpyxl'
-        elif filename_safi.endswith('.xls'):
-            engine = 'xlrd'
-        else:
-            engine = 'openpyxl'
+        safi_bytes, engine = read_file_bytes(file_safi)
         xl = pd.ExcelFile(io.BytesIO(safi_bytes), engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
