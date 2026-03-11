@@ -104,33 +104,10 @@ def read_file_bytes(file):
     filename = getattr(file, 'name', '').lower().strip()
     if filename.endswith('.xlsb'):
         return raw, 'pyxlsb'
-    if filename.endswith('.xls') and not filename.endswith('.xlsx'):
-        # Convertir .xls -> .xlsx en mémoire via xlrd+openpyxl
-        try:
-            import xlrd
-            import openpyxl
-            wb_old = xlrd.open_workbook(file_contents=raw)
-            wb_new = openpyxl.Workbook()
-            wb_new.remove(wb_new.active)
-            for sheet_name in wb_old.sheet_names():
-                ws_old = wb_old.sheet_by_name(sheet_name)
-                ws_new = wb_new.create_sheet(title=sheet_name)
-                for row in range(ws_old.nrows):
-                    for col in range(ws_old.ncols):
-                        cell = ws_old.cell(row, col)
-                        import xlrd as xlrd2
-                        if cell.ctype == xlrd2.XL_CELL_DATE:
-                            import datetime
-                            val = xlrd2.xldate_as_datetime(cell.value, wb_old.datemode)
-                        else:
-                            val = cell.value
-                        ws_new.cell(row+1, col+1, val)
-            out = io.BytesIO()
-            wb_new.save(out)
-            out.seek(0)
-            return out.read(), 'openpyxl'
-        except Exception as e:
-            raise Exception(f"Impossible de lire le fichier .xls : {e}")
+    if filename.endswith('.xlsm') or filename.endswith('.xlsx'):
+        return raw, 'openpyxl'
+    if filename.endswith('.xls'):
+        return raw, 'calamine'  # calamine supporte .xls sans xlrd
     return raw, 'openpyxl'
 
 def get_derniere_valeur(df, col_valeur, col_date="Date"):
