@@ -97,6 +97,11 @@ def is_data_sheet(name):
     return not any(kw in name.strip().lower() for kw in SKIP_KEYWORDS)
 
 def read_excel_any(file):
+    """Remet le curseur au début et retourne le bon moteur selon l'extension."""
+    try:
+        file.seek(0)
+    except Exception:
+        pass
     filename = getattr(file, 'name', '').lower()
     if filename.endswith('.xls') and not filename.endswith('.xlsx') and not filename.endswith('.xlsm'):
         return 'xlrd'
@@ -137,7 +142,9 @@ file_safi = st.sidebar.file_uploader("Fichier Safi", type=EXCEL_TYPES, key="safi
 jorf_df = None
 if file_jorf:
     try:
+        file_jorf.seek(0)  # ← remet le curseur au début
         engine = read_excel_any(file_jorf)
+        file_jorf.seek(0)  # ← remet à nouveau avant la lecture
         df_raw = pd.read_excel(file_jorf, sheet_name='EXPORT', header=None, engine=engine)
         coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
         for r in range(len(df_raw)):
@@ -164,7 +171,9 @@ if file_jorf:
 rade_df = None
 if file_jorf:
     try:
+        file_jorf.seek(0)  # ← remet le curseur au début
         engine = read_excel_any(file_jorf)
+        file_jorf.seek(0)  # ← remet à nouveau avant la lecture
         df_rade = pd.read_excel(file_jorf, sheet_name='Sit Navire', header=None, engine=engine)
         rows_rade = []
         for r in range(len(df_rade)):
@@ -183,7 +192,9 @@ if file_jorf:
 safi_df = None
 if file_safi:
     try:
+        file_safi.seek(0)  # ← remet le curseur au début
         engine = read_excel_any(file_safi)
+        file_safi.seek(0)  # ← remet à nouveau avant la lecture
         xl = pd.ExcelFile(file_safi, engine=engine)
         COL_JOUR = 1; COL_TSP_EXP = 31; COL_TSP_ML = 32; START_ROW = 6
 
@@ -225,6 +236,7 @@ if file_safi:
             if not is_data_sheet(sheet): continue
             mois_num, annee = parse_mois_annee(sheet)
             if mois_num is None or annee is None: continue
+            file_safi.seek(0)  # ← remet avant chaque lecture de feuille
             dfs = pd.read_excel(file_safi, sheet_name=sheet, header=None, engine=engine)
             tsp_exp_col = COL_TSP_EXP; tsp_ml_col = COL_TSP_ML
             if dfs.shape[1] <= COL_TSP_ML:
@@ -330,8 +342,8 @@ jorf_kpi = appliquer_filtre(jorf_df, sel_jorf) if jorf_df is not None else None
 safi_kpi = appliquer_filtre(safi_df, sel_safi) if safi_df is not None else None
 rade_kpi = appliquer_filtre(rade_df, sel_jorf) if rade_df is not None else None
 
-cumul_jorf  = round(float(jorf_kpi["TOTAL Jorf"].sum()), 1)              if jorf_kpi is not None else 0.0
-cumul_safi  = round(float(safi_kpi["TOTAL Safi"].sum()), 1)              if safi_kpi is not None else 0.0
+cumul_jorf  = round(float(jorf_kpi["TOTAL Jorf"].sum()), 1) if jorf_kpi is not None else 0.0
+cumul_safi  = round(float(safi_kpi["TOTAL Safi"].sum()), 1) if safi_kpi is not None else 0.0
 cumul_total = round(cumul_jorf + cumul_safi, 1)
 
 # ─── RADE : dernière valeur à date ───────────────────────────────────────────
@@ -384,7 +396,6 @@ with k4:
     st.markdown(rade_s_html, unsafe_allow_html=True)
 
 with k5:
-    # Total Rade = dernière valeur Rade Jorf + dernière valeur Rade Safi
     rade_total_val = round((rade_j_val if rade_j_date is not None else 0.0) +
                            (rade_s_val if rade_s_date is not None else 0.0), 1)
     rade_total_date = rade_j_date or rade_s_date
@@ -468,7 +479,6 @@ if any_data:
         if safi_f is not None:
             r = safi_f[safi_f["Date"] == d]
             row["RADE_S"] = round(r["TSP ML"].sum(), 1) if not r.empty else 0.0
-        # ── TOTAL RADE ──
         rade_j_row = row.get("RADE_J", 0.0) if rade_f is not None else 0.0
         rade_s_row = row.get("RADE_S", 0.0) if safi_f is not None else 0.0
         if rade_f is not None or safi_f is not None:
@@ -489,14 +499,13 @@ if any_data:
     col_order = [c for c in col_order if c in unified_df.columns]
     unified_df = unified_df[col_order]
 
-    # ─── TOTAL GENERAL : pas de somme pour les colonnes Rade (ce sont des valeurs ponctuelles, pas des cumuls) ───
     rade_cols = {"RADE_J", "RADE_S", "RADE_TOTAL"}
     total_row = {"Date": "TOTAL GENERAL"}
     for col in unified_df.columns:
         if col == "Date":
             continue
         elif col in rade_cols:
-            total_row[col] = None   # Laisser vide pour les colonnes Rade
+            total_row[col] = None
         else:
             total_row[col] = round(unified_df[col].sum(), 1)
     disp_unified = pd.concat([unified_df, pd.DataFrame([total_row])], ignore_index=True)
