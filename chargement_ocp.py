@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import os
 
-st.set_page_config(page_title="OCP - Suivi charge Manufacturing", layout="wide")
+st.set_page_config(page_title="OCP - Suivi chargement Manufacturing", layout="wide")
 
 st.markdown("""
     <style>
@@ -122,7 +122,7 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:34px;font-weight:900;color:#00843D;font-family:Barlow Condensed,sans-serif;'>OCP</div>", unsafe_allow_html=True)
 with col_title:
-    st.title("Suivi charge Manufacturing")
+    st.title("Suivi chargement Manufacturing")
     st.markdown("##### Reporting Consolide — Jorf Lasfar & Safi &nbsp;|&nbsp; Valeurs en milliers de tonnes")
 
 st.divider()
@@ -489,9 +489,15 @@ if any_data:
     col_order = [c for c in col_order if c in unified_df.columns]
     unified_df = unified_df[col_order]
 
+    # ─── TOTAL GENERAL : pas de somme pour les colonnes Rade (ce sont des valeurs ponctuelles, pas des cumuls) ───
+    rade_cols = {"RADE_J", "RADE_S", "RADE_TOTAL"}
     total_row = {"Date": "TOTAL GENERAL"}
     for col in unified_df.columns:
-        if col != "Date":
+        if col == "Date":
+            continue
+        elif col in rade_cols:
+            total_row[col] = None   # Laisser vide pour les colonnes Rade
+        else:
             total_row[col] = round(unified_df[col].sum(), 1)
     disp_unified = pd.concat([unified_df, pd.DataFrame([total_row])], ignore_index=True)
 
