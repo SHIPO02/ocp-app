@@ -1,8 +1,8 @@
-streamlit
-pandas
-openpyxl
+streamlit>=1.32.0
+pandas>=2.0.0
+openpyxl>=3.1.0
 xlrd>=2.0.1
-python-docx
-pyxlsb
-python-calamine
+python-docx>=1.1.0
+pyxlsb>=1.0.10
+python-calamine>=0.1.7
 
