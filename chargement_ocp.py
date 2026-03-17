@@ -21,24 +21,30 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Barlow+Condensed:wght@500;600;700;800&display=swap');
 
-/* ── Variables ── */
+/* ── Variables — Light Theme ── */
 :root {
-  --bg:          #0F1923;
-  --bg2:         #162130;
-  --bg3:         #1E2D3D;
-  --panel:       #1A2840;
-  --border:      #2A3F56;
-  --green:       #00C46A;
-  --green-dk:    #008C4C;
-  --green-glow:  rgba(0,196,106,0.18);
-  --blue:        #1A9ED4;
-  --orange:      #E07B2A;
-  --purple:      #8B5CF6;
-  --red:         #E8485A;
-  --text:        #E8EDF2;
-  --text-muted:  #7A9BB5;
-  --text-dim:    #4A6580;
-  --accent:      #00C46A;
+  --bg:           #F7F8FA;
+  --bg2:          #FFFFFF;
+  --bg3:          #F0F2F5;
+  --panel:        #FFFFFF;
+  --border:       #E2E6EA;
+  --border-light: #EEF0F3;
+  --green:        #00843D;
+  --green-dk:     #005C2A;
+  --green-light:  #E8F5EE;
+  --green-glow:   rgba(0,132,61,0.10);
+  --blue:         #1565C0;
+  --blue-light:   #E3EAF8;
+  --orange:       #C05A00;
+  --orange-light: #FBF0E6;
+  --purple:       #6B3FA0;
+  --purple-light: #F0EBF8;
+  --red:          #C62828;
+  --text:         #1A2332;
+  --text-muted:   #5A6A7A;
+  --text-dim:     #9AAABB;
+  --shadow:       rgba(26,35,50,0.08);
+  --shadow-md:    rgba(26,35,50,0.12);
 }
 
 /* ── Reset & Base ── */
@@ -49,58 +55,70 @@ html, body, [class*="css"] {
 .stApp { background: var(--bg) !important; }
 .main .block-container { padding: 0 2rem 2rem 2rem !important; max-width: 100% !important; }
 
-/* ── Hide default Streamlit elements ── */
+/* ── Hide default Streamlit chrome ── */
 #MainMenu, footer, header { visibility: hidden; }
 [data-testid="stDecoration"] { display: none; }
 .stDeployButton { display: none; }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg3); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-/* ══════════════ SIDEBAR NAV ══════════════ */
+/* ══════════════ SIDEBAR ══════════════ */
 [data-testid="stSidebar"] {
-  background: var(--bg2) !important;
+  background: #FFFFFF !important;
   border-right: 1px solid var(--border) !important;
+  box-shadow: 2px 0 12px rgba(26,35,50,0.06) !important;
   padding: 0 !important;
 }
 [data-testid="stSidebar"] > div:first-child { padding: 0 !important; }
 [data-testid="stSidebarContent"] { padding: 0 !important; }
 
-/* Logo zone */
+/* ── Logo zone ── */
 .nav-logo {
-  padding: 24px 20px 16px 20px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  padding: 20px 16px 16px 16px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.nav-logo-text {
+.nav-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.nav-logo-placeholder {
+  width: 44px; height: 44px;
+  background: var(--green);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--green);
-  letter-spacing: 1px;
-  line-height: 1;
+  font-size: 18px; font-weight: 800; color: white;
+  flex-shrink: 0;
+}
+.nav-logo-text-block { display: flex; flex-direction: column; }
+.nav-logo-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 20px; font-weight: 800;
+  color: var(--green); letter-spacing: 0.5px; line-height: 1.1;
 }
 .nav-logo-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-top: 4px;
+  font-size: 9px; color: var(--text-dim);
+  letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px;
 }
 
-/* Nav section label */
+/* ── Nav section label ── */
 .nav-section-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 2.5px;
-  text-transform: uppercase;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
   color: var(--text-dim);
-  padding: 16px 20px 6px 20px;
+  padding: 14px 16px 4px 16px;
 }
 
-/* Nav button override */
+/* ── Nav buttons ── */
 [data-testid="stSidebar"] .stButton > button {
   width: 100% !important;
   background: transparent !important;
@@ -108,229 +126,166 @@ html, body, [class*="css"] {
   border-radius: 0 !important;
   color: var(--text-muted) !important;
   font-family: 'Barlow', sans-serif !important;
-  font-size: 13.5px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
-  padding: 10px 20px !important;
+  padding: 9px 16px 9px 20px !important;
   text-align: left !important;
-  transition: all 0.15s !important;
+  transition: all 0.15s ease !important;
   margin: 0 !important;
   border-left: 3px solid transparent !important;
   white-space: nowrap !important;
+  box-shadow: none !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover {
-  background: var(--bg3) !important;
-  color: var(--text) !important;
-  border-left-color: var(--text-dim) !important;
-}
-
-/* Active nav button - inject via data attr trick */
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-  background: linear-gradient(90deg, rgba(0,196,106,0.12) 0%, transparent 100%) !important;
+  background: var(--green-light) !important;
   color: var(--green) !important;
-  border-left-color: var(--green) !important;
-  font-weight: 600 !important;
+  border-left-color: rgba(0,132,61,0.3) !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+  background: var(--green-light) !important;
+  color: var(--green-dk) !important;
+  border-left: 3px solid var(--green) !important;
+  font-weight: 700 !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+  background: #D4EDE0 !important;
 }
 
-.nav-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 8px 0;
-}
+/* ── Divider ── */
+.nav-divider { height: 1px; background: var(--border-light); margin: 6px 0; }
 
-/* File uploader section */
-.nav-file-section {
-  padding: 12px 16px;
-  margin: 4px 8px;
-  background: var(--bg3);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-  background: transparent !important;
-}
+/* ── File uploader in sidebar ── */
 [data-testid="stSidebar"] [data-testid="stFileUploader"] label {
   font-size: 11px !important;
   color: var(--text-muted) !important;
   font-weight: 600 !important;
-  letter-spacing: 0.5px !important;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-  background: var(--bg) !important;
+  background: var(--bg3) !important;
   border: 1px dashed var(--border) !important;
   border-radius: 6px !important;
-  padding: 8px !important;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p {
-  font-size: 11px !important;
-  color: var(--text-dim) !important;
+  font-size: 11px !important; color: var(--text-dim) !important;
 }
-
-/* Sidebar success/warning/error */
 [data-testid="stSidebar"] .stAlert {
-  padding: 6px 10px !important;
-  margin: 4px 8px !important;
-  border-radius: 6px !important;
-  font-size: 11px !important;
+  margin: 2px 8px !important; border-radius: 6px !important; font-size: 11px !important;
 }
 
 /* ══════════════ TOP BAR ══════════════ */
 .topbar {
-  background: var(--bg2);
+  background: #FFFFFF;
   border-bottom: 1px solid var(--border);
-  padding: 14px 0 12px 0;
+  padding: 14px 2rem 12px 2rem;
   margin: 0 -2rem 24px -2rem;
-  padding-left: 2rem;
-  padding-right: 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-shadow: 0 1px 4px var(--shadow);
 }
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-vline { width: 1px; height: 32px; background: var(--border); }
 .topbar-title {
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0.5px;
+  font-size: 22px; font-weight: 700;
+  color: var(--text); letter-spacing: 0.3px;
 }
-.topbar-breadcrumb {
-  font-size: 11px;
-  color: var(--text-dim);
-  letter-spacing: 0.5px;
-  margin-top: 2px;
-}
+.topbar-breadcrumb { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .topbar-badge {
-  background: var(--green-glow);
-  color: var(--green);
-  border: 1px solid rgba(0,196,106,0.3);
-  border-radius: 20px;
-  padding: 4px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  background: var(--green-light);
+  color: var(--green-dk);
+  border: 1px solid rgba(0,132,61,0.2);
+  border-radius: 20px; padding: 4px 14px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
 }
 
 /* ══════════════ KPI CARDS ══════════════ */
-.kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 24px; }
 .kpi-card {
-  background: var(--panel);
+  background: #FFFFFF;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px 20px;
   position: relative;
   overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.18s, box-shadow 0.18s;
+  box-shadow: 0 1px 4px var(--shadow);
 }
-.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--shadow-md);
+}
 .kpi-card::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
+  content: ''; position: absolute;
+  top: 0; left: 0; right: 0; height: 3px; border-radius: 10px 10px 0 0;
 }
 .kpi-card.green::after  { background: var(--green); }
 .kpi-card.blue::after   { background: var(--blue); }
 .kpi-card.orange::after { background: var(--orange); }
 .kpi-card.purple::after { background: var(--purple); }
-.kpi-icon {
-  font-size: 20px;
-  margin-bottom: 10px;
-  display: block;
-}
+.kpi-icon { font-size: 18px; margin-bottom: 8px; display: block; }
 .kpi-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px;
 }
 .kpi-value {
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1;
-  margin-bottom: 4px;
+  font-size: 34px; font-weight: 700; line-height: 1; margin-bottom: 4px;
 }
 .kpi-value.green  { color: var(--green); }
 .kpi-value.blue   { color: var(--blue); }
 .kpi-value.orange { color: var(--orange); }
 .kpi-value.purple { color: var(--purple); }
-.kpi-unit { font-size: 14px; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
-.kpi-sub  { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.kpi-unit { font-size: 13px; font-weight: 500; color: var(--text-dim); margin-left: 2px; }
+.kpi-sub  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
 /* ══════════════ SECTION HEADERS ══════════════ */
 .section-title {
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-muted);
-  margin: 28px 0 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin: 24px 0 10px 0;
+  display: flex; align-items: center; gap: 8px;
 }
 .section-title::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 16px;
-  background: var(--green);
-  border-radius: 2px;
+  content: ''; display: inline-block;
+  width: 3px; height: 14px;
+  background: var(--green); border-radius: 2px;
 }
-.section-title.blue::before  { background: var(--blue); }
-.section-title.orange::before{ background: var(--orange); }
-.section-title.purple::before{ background: var(--purple); }
+.section-title.blue::before   { background: var(--blue); }
+.section-title.orange::before { background: var(--orange); }
+.section-title.purple::before { background: var(--purple); }
 
 /* ══════════════ TABLES ══════════════ */
 [data-testid="stDataFrame"] {
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  overflow: hidden !important;
-}
-[data-testid="stDataFrame"] th {
-  background: var(--bg3) !important;
-  color: var(--text-muted) !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
-  text-transform: uppercase !important;
-  border-bottom: 1px solid var(--border) !important;
-}
-[data-testid="stDataFrame"] td {
-  background: var(--panel) !important;
-  color: var(--text) !important;
-  font-size: 13px !important;
-  border-bottom: 1px solid rgba(42,63,86,0.5) !important;
+  border-radius: 8px !important; overflow: hidden !important;
+  box-shadow: 0 1px 4px var(--shadow) !important;
 }
 
-/* ══════════════ TABS (sub-tabs inside pages) ══════════════ */
+/* ══════════════ TABS ══════════════ */
 [data-testid="stTabs"] [data-baseweb="tab-list"] {
-  background: var(--bg2) !important;
-  border-bottom: 1px solid var(--border) !important;
+  background: #FFFFFF !important;
+  border-bottom: 2px solid var(--border) !important;
   gap: 0 !important;
-  border-radius: 8px 8px 0 0 !important;
-  padding: 0 4px !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"] {
   background: transparent !important;
   color: var(--text-muted) !important;
   font-family: 'Barlow', sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  padding: 10px 18px !important;
+  font-size: 13px !important; font-weight: 500 !important;
+  padding: 10px 20px !important;
   border-bottom: 2px solid transparent !important;
-  margin-bottom: -1px !important;
+  margin-bottom: -2px !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
   color: var(--green) !important;
   border-bottom-color: var(--green) !important;
   background: transparent !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab-panel"] {
-  background: var(--panel) !important;
+  background: #FFFFFF !important;
   border: 1px solid var(--border) !important;
   border-top: none !important;
   border-radius: 0 0 8px 8px !important;
@@ -341,111 +296,119 @@ html, body, [class*="css"] {
 [data-testid="stNumberInput"] input,
 [data-testid="stTextInput"] input,
 [data-baseweb="select"] {
-  background: var(--bg3) !important;
+  background: #FFFFFF !important;
   border-color: var(--border) !important;
   color: var(--text) !important;
   border-radius: 6px !important;
-  font-size: 13px !important;
 }
 [data-testid="stNumberInput"] label,
 [data-testid="stTextInput"] label,
 [data-testid="stSelectbox"] label,
 [data-testid="stCheckbox"] label {
   color: var(--text-muted) !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.3px !important;
+  font-size: 12px !important; font-weight: 600 !important;
 }
-[data-testid="stCheckbox"] span { color: var(--text) !important; }
 
 /* ══════════════ BUTTONS ══════════════ */
 .stButton > button[kind="primary"] {
   background: var(--green) !important;
-  color: #001A0D !important;
+  color: #FFFFFF !important;
   border: none !important;
   border-radius: 7px !important;
-  font-weight: 700 !important;
-  font-size: 13px !important;
-  letter-spacing: 0.3px !important;
+  font-weight: 700 !important; font-size: 13px !important;
   padding: 10px 24px !important;
   transition: all 0.15s !important;
+  box-shadow: 0 2px 8px rgba(0,132,61,0.25) !important;
 }
 .stButton > button[kind="primary"]:hover {
-  background: #00E87D !important;
+  background: var(--green-dk) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 16px rgba(0,196,106,0.35) !important;
+  box-shadow: 0 4px 14px rgba(0,132,61,0.35) !important;
 }
 .stButton > button[kind="secondary"] {
-  background: var(--bg3) !important;
+  background: #FFFFFF !important;
   color: var(--text) !important;
   border: 1px solid var(--border) !important;
   border-radius: 7px !important;
 }
+.stButton > button[kind="secondary"]:hover {
+  background: var(--bg3) !important;
+  border-color: #C5CDD6 !important;
+}
 
 /* ══════════════ METRICS ══════════════ */
 [data-testid="stMetric"] {
-  background: var(--panel) !important;
+  background: #FFFFFF !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  padding: 14px 16px !important;
+  border-radius: 8px !important; padding: 14px 16px !important;
+  box-shadow: 0 1px 4px var(--shadow) !important;
 }
 [data-testid="stMetricLabel"] { color: var(--text-muted) !important; font-size: 11px !important; font-weight: 600 !important; }
 [data-testid="stMetricValue"] { color: var(--text) !important; font-family: 'Barlow Condensed', sans-serif !important; font-size: 26px !important; }
-[data-testid="stMetricDelta"] { font-size: 11px !important; }
 
-/* ══════════════ INFO/SUCCESS/WARNING ══════════════ */
-.stAlert { border-radius: 8px !important; border: none !important; }
-[data-testid="stAlert"][data-baseweb="notification"] { background: var(--bg3) !important; }
+/* ══════════════ ALERTS ══════════════ */
+.stAlert { border-radius: 8px !important; }
 
 /* ══════════════ EXPANDER ══════════════ */
 [data-testid="stExpander"] {
-  background: var(--bg3) !important;
+  background: #FFFFFF !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  margin-bottom: 4px !important;
+  border-radius: 8px !important; margin-bottom: 4px !important;
 }
-[data-testid="stExpander"] summary { color: var(--text-muted) !important; font-size: 12px !important; }
-
-/* ══════════════ RADIO ══════════════ */
-[data-testid="stRadio"] label { color: var(--text-muted) !important; font-size: 12px !important; }
-[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p { color: var(--text) !important; }
 
 /* ══════════════ MULTISELECT ══════════════ */
-[data-baseweb="tag"] { background: var(--green-glow) !important; border-color: rgba(0,196,106,0.3) !important; }
-[data-baseweb="tag"] span { color: var(--green) !important; }
+[data-baseweb="tag"] { background: var(--green-light) !important; border-color: rgba(0,132,61,0.25) !important; }
+[data-baseweb="tag"] span { color: var(--green-dk) !important; }
 
 /* ══════════════ DIVIDER ══════════════ */
-hr { border-color: var(--border) !important; }
-
-/* ══════════════ GROUP HEADERS for table ══════════════ */
-.grp-bar {
-  display: flex; gap: 4px; margin-bottom: 6px; font-family: 'Barlow Condensed', sans-serif;
-  font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-}
-.grp-cell {
-  padding: 5px 10px; border-radius: 4px; text-align: center; color: white; flex: 1;
-}
+hr { border-color: var(--border-light) !important; }
 
 /* ══════════════ COPY BUTTON ══════════════ */
 .copy-btn {
-  background: var(--bg3); color: var(--text-muted); border: 1px solid var(--border);
-  padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
-  font-family: Barlow, sans-serif; transition: all 0.15s;
+  background: #F7F8FA; color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; font-family: Barlow,sans-serif;
+  transition: all 0.15s;
 }
-.copy-btn:hover { background: var(--green-glow); color: var(--green); border-color: rgba(0,196,106,0.3); }
-.copy-btn.copied { background: var(--green-glow); color: var(--green); border-color: rgba(0,196,106,0.4); }
+.copy-btn:hover { background: var(--green-light); color: var(--green-dk); border-color: rgba(0,132,61,0.3); }
+.copy-btn.copied { background: var(--green-light); color: var(--green); border-color: rgba(0,132,61,0.4); }
 
-/* ══════════════ SIDEBAR FILTER SECTION ══════════════ */
-[data-testid="stSidebar"] [data-testid="stRadio"] > div { gap: 2px !important; }
-[data-testid="stSidebar"] .stMarkdown p { color: var(--text-muted); font-size: 12px; }
-
-/* Status dots */
+/* ══════════════ STATUS DOTS ══════════════ */
 .status-dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   margin-right: 6px; vertical-align: middle;
 }
-.status-dot.ok   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.ok   { background: var(--green); }
 .status-dot.none { background: var(--text-dim); }
+
+/* ══════════════ PLACEHOLDER PAGES ══════════════ */
+.placeholder-card {
+  background: #FFFFFF; border: 1px solid var(--border);
+  border-radius: 12px; padding: 56px 40px;
+  text-align: center; margin-top: 40px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.placeholder-card .emoji { font-size: 52px; margin-bottom: 16px; }
+.placeholder-card h2 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 26px; font-weight: 700; color: var(--text); margin-bottom: 8px;
+}
+.placeholder-card p { font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto; line-height: 1.6; }
+.badge-soon-green {
+  display: inline-block; margin-top: 24px;
+  background: var(--green-light); color: var(--green-dk);
+  border: 1px solid rgba(0,132,61,0.2);
+  border-radius: 20px; padding: 5px 18px;
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+}
+.badge-soon-blue {
+  display: inline-block; margin-top: 24px;
+  background: var(--blue-light); color: var(--blue);
+  border: 1px solid rgba(21,101,192,0.2);
+  border-radius: 20px; padding: 5px 18px;
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -571,12 +534,12 @@ def appliquer_filtre(df,sel,col="Date"):
 # ── Plotly theme ──
 PLOT_LAYOUT = dict(
     paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(26,40,64,0.4)',
-    font=dict(family='Barlow, sans-serif', color='#7A9BB5'),
-    xaxis=dict(gridcolor='rgba(42,63,86,0.5)', linecolor='#2A3F56', tickfont=dict(color='#7A9BB5',size=11)),
-    yaxis=dict(gridcolor='rgba(42,63,86,0.5)', linecolor='#2A3F56', tickfont=dict(color='#7A9BB5',size=11)),
-    legend=dict(bgcolor='rgba(26,40,64,0.8)', bordercolor='#2A3F56', borderwidth=1,
-                font=dict(color='#E8EDF2', size=11)),
+    plot_bgcolor='rgba(247,248,250,0.8)',
+    font=dict(family='Barlow, sans-serif', color='#5A6A7A'),
+    xaxis=dict(gridcolor='#E2E6EA', linecolor='#E2E6EA', tickfont=dict(color='#5A6A7A',size=11)),
+    yaxis=dict(gridcolor='#E2E6EA', linecolor='#E2E6EA', tickfont=dict(color='#5A6A7A',size=11)),
+    legend=dict(bgcolor='rgba(255,255,255,0.9)', bordercolor='#E2E6EA', borderwidth=1,
+                font=dict(color='#1A2332', size=11)),
     margin=dict(l=16,r=16,t=40,b=16),
     height=360,
 )
@@ -711,11 +674,21 @@ safi_df = st.session_state.get("safi_df",None)
 # SIDEBAR — VERTICAL NAVIGATION
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    # Logo
-    st.markdown("""
+    # Logo — image OCP si disponible, sinon placeholder vert
+    if os.path.exists("logo_ocp.png"):
+        import base64 as _b64
+        logo_b64 = _b64.b64encode(open("logo_ocp.png","rb").read()).decode()
+        logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="nav-logo-img"/>'
+    else:
+        logo_html = '<div class="nav-logo-placeholder">OCP</div>'
+
+    st.markdown(f"""
     <div class="nav-logo">
-        <div class="nav-logo-text">● OCP</div>
-        <div class="nav-logo-sub">Manufacturing Dashboard</div>
+        {logo_html}
+        <div class="nav-logo-text-block">
+            <div class="nav-logo-title">OCP</div>
+            <div class="nav-logo-sub">Manufacturing Dashboard</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -897,11 +870,13 @@ title, subtitle = PAGE_TITLES[page]
 # Top bar
 st.markdown(f"""
 <div class="topbar">
-  <div>
-    <div class="topbar-title">{title}</div>
-    <div class="topbar-breadcrumb">OCP Manufacturing &nbsp;›&nbsp; {title.split(' ',1)[1]}</div>
+  <div class="topbar-left">
+    <div>
+      <div class="topbar-title">{title}</div>
+      <div class="topbar-breadcrumb">OCP Manufacturing &nbsp;›&nbsp; {title.split(' ',1)[1]}</div>
+    </div>
   </div>
-  <div class="topbar-badge">{subtitle[:45]}...</div>
+  <div class="topbar-badge">{subtitle}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -947,7 +922,7 @@ if page == "suivi":
                 <div class="kpi-label">Rade Jorf</div>
                 <div class="kpi-value purple">{fmt_number(rade_j_val)}<span class="kpi-unit">KT</span></div>
                 <div class="kpi-sub">Engrais en attente</div>
-                <div style="font-size:10px;color:var(--text-dim);margin-top:4px">📅 {rade_j_date}</div>
+                <div style="font-size:10px;color:var(--text-muted);margin-top:4px">📅 {rade_j_date}</div>
             </div>""", unsafe_allow_html=True)
         else:
             kpi(k2,"purple","⚓","Rade Jorf",0.0,"Fichier non chargé")
@@ -1034,7 +1009,7 @@ if page == "suivi":
                     this.innerHTML='✓ Copié'; this.classList.add('copied');
                     setTimeout(()=>{{this.innerHTML='📋 {label}'; this.classList.remove('copied')}},2000)
                   }})">📋 {label}</button>
-                <style>.copy-btn{{background:#1E2D3D;color:#7A9BB5;border:1px solid #2A3F56;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Barlow,sans-serif;transition:all .15s}}.copy-btn:hover,.copy-btn.copied{{background:rgba(0,196,106,.12);color:#00C46A;border-color:rgba(0,196,106,.3)}}</style>
+                <style>.copy-btn{{background:#F7F8FA;color:#5A6A7A;border:1px solid #E2E6EA;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Barlow,sans-serif;transition:all .15s}}.copy-btn:hover,.copy-btn.copied{{background:#E8F5EE;color:#005C2A;border-color:rgba(0,132,61,.3)}}</style>
                 """, height=40)
 
         if jorf_f is not None and "J_TOTAL" in unified_df.columns:
@@ -1057,7 +1032,7 @@ if page == "suivi":
                     fig.add_trace(go.Bar(x=rc["Date"],y=rc["RADE_J"],name="Rade Jorf",
                         marker=dict(color="#8B5CF6",opacity=0.85),
                         hovertemplate='<b>%{x}</b><br>Rade : %{y:.1f} KT<extra></extra>'))
-                    fig.update_layout(**PLOT_LAYOUT,title=dict(text="Rade Jorf (KT)",font=dict(size=13,color="#7A9BB5")))
+                    fig.update_layout(**PLOT_LAYOUT,title=dict(text="Rade Jorf (KT)",font=dict(size=13,color="#5A6A7A")))
                     st.plotly_chart(fig,use_container_width=True)
                 else: st.info("Pas de données Rade disponibles.")
             else: st.info("Chargez le fichier Jorf pour voir la Rade.")
@@ -1070,9 +1045,11 @@ if page == "suivi":
                 colors={"J_TOTAL":"#00C46A","S_TOTAL":"#1A9ED4"}
                 names_={"J_TOTAL":"Jorf","S_TOTAL":"Safi"}
                 for c in djs:
+                    clr = "#00843D" if c=="J_TOTAL" else "#1565C0"
+                    fill_clr = "rgba(0,132,61,0.07)" if c=="J_TOTAL" else "rgba(21,101,192,0.07)"
                     fig.add_trace(go.Scatter(x=unified_df["Date"],y=unified_df[c],mode='lines',
-                        name=names_[c],line=dict(color=colors[c],width=2),fill='tozeroy',
-                        fillcolor=colors[c].replace('#','rgba(').replace('00C46A','0,196,106,0.08)').replace('1A9ED4','26,158,212,0.08)'),
+                        name=names_[c],line=dict(color=clr,width=2),fill='tozeroy',
+                        fillcolor=fill_clr,
                         hovertemplate=f'<b>%{{x}}</b><br>{names_[c]}: %{{y:.1f}} KT<extra></extra>'))
                 fig.update_layout(**PLOT_LAYOUT,title=dict(text="Total Jorf & Safi (KT/jour)",font=dict(size=13,color="#7A9BB5")))
                 st.plotly_chart(fig,use_container_width=True)
@@ -1107,11 +1084,11 @@ elif page == "stock":
         # Stock line
         colors=['#00C46A' if v>=seuil else '#E8485A' for v in sv]
         fig.add_trace(go.Scatter(x=dates,y=sv,mode='lines',name='Stock',
-            line=dict(color='#00C46A',width=2.5),fill='tozeroy',
-            fillcolor='rgba(0,196,106,0.06)',
+            line=dict(color='#00843D',width=2.5),fill='tozeroy',
+            fillcolor='rgba(0,132,61,0.07)',
             hovertemplate='<b>%{x|%d/%m/%Y}</b><br>Stock : %{y:,.0f} T<extra></extra>'))
         fig.add_trace(go.Scatter(x=dates,y=[seuil]*len(dates),mode='lines',
-            name=f'Seuil ({seuil:,} T)',line=dict(dash='dash',color='#E8485A',width=1.5)))
+            name=f'Seuil ({seuil:,} T)',line=dict(dash='dash',color='#C62828',width=1.5)))
         for i,date in enumerate(nav_arr):
             idx=dates.index(date)
             fig.add_trace(go.Scatter(x=[date],y=[sv[idx]],mode='markers+text',
@@ -1122,7 +1099,7 @@ elif page == "stock":
                 textfont=dict(size=11,color='#1A9ED4'),showlegend=True))
         layout=dict(**PLOT_LAYOUT)
         layout['height']=400
-        layout['title']=dict(text=titre,font=dict(size=15,color='#E8EDF2'))
+        layout['title']=dict(text=titre,font=dict(size=15,color='#1A2332'))
         fig.update_layout(**layout)
         st.plotly_chart(fig,use_container_width=True)
         # Stats
@@ -1237,11 +1214,11 @@ elif page == "stock":
                 stk+=pj__; stk-=cj__; svacs.append(stk)
             fig=go.Figure()
             fig.add_trace(go.Scatter(x=cal_acs,y=svacs,mode='lines',name='Stock ACS',
-                line=dict(color='#00C46A',width=2.5),fill='tozeroy',fillcolor='rgba(0,196,106,0.07)'))
+                line=dict(color='#00843D',width=2.5),fill='tozeroy',fillcolor='rgba(0,132,61,0.07)'))
             fig.add_trace(go.Scatter(x=cal_acs,y=[0]*len(cal_acs),mode='lines',name='Zéro stock',
-                line=dict(dash='dash',color='#E8485A',width=1.5)))
+                line=dict(dash='dash',color='#C62828',width=1.5)))
             lyt=dict(**PLOT_LAYOUT); lyt['height']=380
-            lyt['title']=dict(text="Évolution du stock ACS (simulation linéaire)",font=dict(size=14,color='#E8EDF2'))
+            lyt['title']=dict(text="Évolution du stock ACS (simulation linéaire)",font=dict(size=14,color='#1A2332'))
             fig.update_layout(**lyt)
             st.plotly_chart(fig,use_container_width=True)
 
@@ -1281,25 +1258,12 @@ elif page == "stock":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "ventes":
     st.markdown("""
-    <div style="
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 48px 40px;
-      text-align: center;
-      margin-top: 40px;
-    ">
-      <div style="font-size:56px; margin-bottom:16px">📊</div>
-      <div style="font-family:'Barlow Condensed',sans-serif; font-size:28px; font-weight:700; color:#E8EDF2; margin-bottom:8px">
-        Pipeline des Ventes
-      </div>
-      <div style="font-size:14px; color:#7A9BB5; max-width:400px; margin:0 auto; line-height:1.6">
-        Ce module est en cours de développement.<br/>
-        Il permettra de suivre les opportunités commerciales, les performances par produit et par marché.
-      </div>
-      <div style="margin-top:28px; display:inline-block; background:rgba(0,196,106,0.1); border:1px solid rgba(0,196,106,0.25); border-radius:20px; padding:6px 18px; font-size:12px; color:#00C46A; font-weight:600; letter-spacing:1px">
-        PROCHAINEMENT
-      </div>
+    <div class="placeholder-card">
+      <div class="emoji">📊</div>
+      <h2>Pipeline des Ventes</h2>
+      <p>Ce module est en cours de développement.<br/>
+      Il permettra de suivre les opportunités commerciales, les performances par produit et par marché.</p>
+      <div class="badge-soon-green">PROCHAINEMENT</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1309,24 +1273,11 @@ elif page == "ventes":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "navires":
     st.markdown("""
-    <div style="
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 48px 40px;
-      text-align: center;
-      margin-top: 40px;
-    ">
-      <div style="font-size:56px; margin-bottom:16px">🚢</div>
-      <div style="font-family:'Barlow Condensed',sans-serif; font-size:28px; font-weight:700; color:#E8EDF2; margin-bottom:8px">
-        Export Navire
-      </div>
-      <div style="font-size:14px; color:#7A9BB5; max-width:400px; margin:0 auto; line-height:1.6">
-        Ce module est en cours de développement.<br/>
-        Il permettra de planifier et suivre les chargements navires, les escales, et les volumes exportés.
-      </div>
-      <div style="margin-top:28px; display:inline-block; background:rgba(26,158,212,0.1); border:1px solid rgba(26,158,212,0.25); border-radius:20px; padding:6px 18px; font-size:12px; color:#1A9ED4; font-weight:600; letter-spacing:1px">
-        PROCHAINEMENT
-      </div>
+    <div class="placeholder-card">
+      <div class="emoji">🚢</div>
+      <h2>Export Navire</h2>
+      <p>Ce module est en cours de développement.<br/>
+      Il permettra de planifier et suivre les chargements navires, les escales, et les volumes exportés.</p>
+      <div class="badge-soon-blue">PROCHAINEMENT</div>
     </div>
     """, unsafe_allow_html=True)
