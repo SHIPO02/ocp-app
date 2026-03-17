@@ -1040,10 +1040,8 @@ if page == "suivi":
         with g2:
             st.markdown('<div class="section-title">Production journalière — Jorf vs Safi</div>', unsafe_allow_html=True)
             djs=[c for c in ["J_TOTAL","S_TOTAL"] if c in unified_df.columns]
+            names_={"J_TOTAL":"Jorf","S_TOTAL":"Safi"}
             if djs and len(unified_df)>1:
-                fig=go.Figure()
-                colors={"J_TOTAL":"#00C46A","S_TOTAL":"#1A9ED4"}
-                names_={"J_TOTAL":"Jorf","S_TOTAL":"Safi"}
                 for c in djs:
                     clr = "#00843D" if c=="J_TOTAL" else "#1565C0"
                     fill_clr = "rgba(0,132,61,0.07)" if c=="J_TOTAL" else "rgba(21,101,192,0.07)"
