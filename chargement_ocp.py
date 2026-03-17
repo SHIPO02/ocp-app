@@ -337,7 +337,10 @@ if file_safi:
         st.session_state["safi_df"]=sd; st.session_state["safi_name"]=file_safi.name
         save_cache(SAFI_CACHE,{"safi_df":sd,"filename":file_safi.name})
         file_safi.seek(0); add_to_historique(HIST_SAFI,file_safi.name,file_safi.read(),"safi")
-        st.sidebar.success("✅ Safi chargé !") if sd is not None else st.sidebar.warning("Aucune feuille mensuelle détectée.")
+        if sd is not None:
+            st.sidebar.success("✅ Safi chargé !")
+        else:
+            st.sidebar.warning("Aucune feuille mensuelle détectée.")
     except Exception as e: st.sidebar.error(f"Erreur Safi : {e}")
 
 # Historique
