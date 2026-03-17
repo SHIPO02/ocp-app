@@ -1,445 +1,381 @@
 import streamlit as st
 import pandas as pd
-import re
-import os
-import io
-import pickle
-import json
+import re, os, io, pickle, json
 from datetime import datetime
 import plotly.graph_objects as go
+import base64
 
-st.set_page_config(
-    page_title="OCP Manufacturing Dashboard",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="OCP Manufacturing", layout="wide", initial_sidebar_state="expanded")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# THEME & GLOBAL CSS
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# CSS — THÈME BLANC PROFESSIONNEL
+# ══════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap');
 
 :root {
-  --green:        #00843D;
-  --green-dk:     #005C2A;
-  --green-lt:     #E8F5EE;
-  --blue:         #1565C0;
-  --blue-lt:      #E3EAF8;
-  --orange:       #C05A00;
-  --orange-lt:    #FBF0E6;
-  --purple:       #6B3FA0;
-  --purple-lt:    #F0EBF8;
-  --red:          #C62828;
-  --bg:           #F4F6F8;
-  --white:        #FFFFFF;
-  --border:       #DDE1E7;
-  --text:         #1A2332;
-  --text-2:       #4A5568;
-  --text-3:       #9AAABB;
-  --shadow-sm:    0 1px 3px rgba(0,0,0,0.08);
-  --shadow-md:    0 4px 12px rgba(0,0,0,0.10);
+  --green:     #00843D;  --green-dk:  #005C2A;  --green-lt:  #E8F5EE;
+  --blue:      #1565C0;  --blue-lt:   #E3EAF8;
+  --orange:    #C05A00;  --orange-lt: #FBF0E6;
+  --purple:    #6B3FA0;  --purple-lt: #F0EBF8;
+  --red:       #C62828;
+  --bg:        #F2F4F7;  --white:     #FFFFFF;
+  --border:    #E0E4EA;  --border2:   #EEF0F4;
+  --text:      #12202E;  --text2:     #4A5568;  --text3:     #94A3B8;
+  --sh1: 0 1px 3px rgba(0,0,0,0.07);
+  --sh2: 0 4px 16px rgba(0,0,0,0.10);
+  --sh3: 0 8px 32px rgba(0,0,0,0.12);
 }
 
-html, body, [class*="css"] { font-family: 'Barlow', sans-serif !important; color: var(--text); }
+html,body,[class*="css"] { font-family:'Barlow',sans-serif !important; color:var(--text); }
+.stApp { background:var(--bg) !important; }
+.main .block-container { padding:0 1.8rem 2rem 1.8rem !important; max-width:100% !important; }
+#MainMenu,footer { visibility:hidden; }
+header[data-testid="stHeader"] { background:transparent !important; height:0 !important; }
+[data-testid="stDecoration"],.stDeployButton { display:none !important; }
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
-/* ── App background ── */
-.stApp { background: var(--bg) !important; }
-.main .block-container { padding: 0 1.5rem 2rem 1.5rem !important; max-width: 100% !important; }
-
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer { visibility: hidden; }
-header[data-testid="stHeader"] { background: transparent !important; height: 0 !important; }
-[data-testid="stDecoration"] { display: none !important; }
-.stDeployButton { display: none !important; }
-
-/* ════════════════════════════
-   SIDEBAR — clé du problème
-   ════════════════════════════ */
+/* ─── SIDEBAR ─── */
 [data-testid="stSidebar"] {
-  background: var(--white) !important;
-  border-right: 1px solid var(--border) !important;
-  box-shadow: 2px 0 8px rgba(0,0,0,0.06) !important;
+  background:var(--white) !important;
+  border-right:1px solid var(--border) !important;
+  box-shadow:2px 0 10px rgba(0,0,0,0.06) !important;
 }
-/* Forcer la largeur et l'affichage */
-[data-testid="stSidebar"],
-[data-testid="stSidebar"] > div {
-  width: 252px !important;
-  min-width: 252px !important;
-  max-width: 252px !important;
+[data-testid="stSidebar"],[data-testid="stSidebar"]>div {
+  width:220px !important; min-width:220px !important; max-width:220px !important;
 }
-[data-testid="stSidebarContent"] { padding: 0 !important; overflow-y: auto !important; }
-
-/* Cacher le chevron de repli */
-button[data-testid="baseButton-headerNoPadding"],
+[data-testid="stSidebarContent"] { padding:0 !important; overflow-y:auto !important; }
 [data-testid="stSidebarCollapseButton"],
-button[kind="header"] { display: none !important; visibility: hidden !important; }
+button[data-testid="baseButton-headerNoPadding"] { display:none !important; }
+[data-testid="stSidebar"] section,[data-testid="stSidebar"] .block-container { padding:0 !important; }
 
-/* Enlever le padding Streamlit dans la sidebar */
-[data-testid="stSidebar"] section { padding: 0 !important; }
-[data-testid="stSidebar"] .block-container { padding: 0 !important; }
+/* Logo */
+.sbl {
+  padding:16px 14px 14px 14px; border-bottom:1px solid var(--border2);
+  display:flex; align-items:center; gap:10px; background:var(--white);
+}
+.sbl-box {
+  width:38px; height:38px; background:var(--green); border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Barlow Condensed',sans-serif; font-size:15px; font-weight:800;
+  color:white; flex-shrink:0; letter-spacing:.3px;
+}
+.sbl-img { width:38px; height:38px; object-fit:contain; flex-shrink:0; }
+.sbl-name { font-family:'Barlow Condensed',sans-serif; font-size:18px; font-weight:800; color:var(--green); line-height:1.1; }
+.sbl-sub  { font-size:8px; color:var(--text3); letter-spacing:1.5px; text-transform:uppercase; margin-top:1px; }
 
-/* ── Logo zone ── */
-.nav-logo {
-  padding: 18px 16px 14px 16px;
-  border-bottom: 1px solid #EEF0F3;
-  display: flex; align-items: center; gap: 10px;
-  background: var(--white);
-}
-.nav-logo-img { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
-.nav-logo-box {
-  width: 40px; height: 40px; background: var(--green); border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 800;
-  color: white; flex-shrink: 0; letter-spacing: 0.5px;
-}
-.nav-logo-name {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 19px; font-weight: 800; color: var(--green); line-height: 1.1;
-}
-.nav-logo-sub { font-size: 9px; color: var(--text-3); letter-spacing: 1.5px; text-transform: uppercase; }
+/* Nav section label */
+.slbl { font-size:8px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--text3); padding:14px 14px 4px 14px; }
+.shr  { height:1px; background:var(--border2); margin:6px 0; }
 
-/* ── Nav section label ── */
-.nav-sep {
-  font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
-  color: var(--text-3); padding: 14px 16px 5px 16px;
-}
-.nav-hr { height: 1px; background: #EEF0F3; margin: 6px 0; }
-
-/* ── Nav buttons in sidebar ── */
+/* Nav buttons */
 [data-testid="stSidebar"] .stButton button {
-  width: 100% !important;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  color: var(--text-2) !important;
-  font-family: 'Barlow', sans-serif !important;
-  font-size: 13px !important; font-weight: 500 !important;
-  padding: 9px 14px 9px 18px !important;
-  text-align: left !important;
-  border-left: 3px solid transparent !important;
-  white-space: nowrap !important;
-  box-shadow: none !important;
-  transition: background 0.15s, color 0.15s !important;
+  width:100% !important; background:transparent !important; border:none !important;
+  border-radius:0 !important; color:var(--text2) !important;
+  font-family:'Barlow',sans-serif !important; font-size:13px !important; font-weight:500 !important;
+  padding:9px 12px 9px 16px !important; text-align:left !important;
+  border-left:3px solid transparent !important; white-space:nowrap !important;
+  box-shadow:none !important; transition:background .15s,color .15s !important;
 }
 [data-testid="stSidebar"] .stButton button:hover {
-  background: var(--green-lt) !important;
-  color: var(--green) !important;
-  border-left-color: rgba(0,132,61,0.4) !important;
+  background:var(--green-lt) !important; color:var(--green) !important;
+  border-left-color:rgba(0,132,61,.4) !important;
 }
 [data-testid="stSidebar"] .stButton button[kind="primary"] {
-  background: var(--green-lt) !important;
-  color: var(--green-dk) !important;
-  border-left: 3px solid var(--green) !important;
-  font-weight: 700 !important;
+  background:var(--green-lt) !important; color:var(--green-dk) !important;
+  border-left:3px solid var(--green) !important; font-weight:700 !important;
 }
 
-/* ── File uploader in sidebar ── */
-[data-testid="stSidebar"] [data-testid="stFileUploader"] { padding: 0 8px; }
-[data-testid="stSidebar"] [data-testid="stFileUploader"] label {
-  font-size: 11px !important; color: var(--text-2) !important; font-weight: 600 !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-  background: var(--bg) !important;
-  border: 1px dashed var(--border) !important; border-radius: 6px !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p { font-size: 10px !important; }
-[data-testid="stSidebar"] .stAlert { margin: 2px 8px !important; font-size: 11px !important; }
-
-/* ── Expander in sidebar ── */
-[data-testid="stSidebar"] [data-testid="stExpander"] {
-  margin: 2px 8px !important; border-radius: 6px !important;
-  border: 1px solid var(--border) !important; background: var(--bg) !important;
-}
-[data-testid="stSidebar"] [data-testid="stExpander"] summary { font-size: 11px !important; }
-
-/* ── Radio & multiselect in sidebar ── */
-[data-testid="stSidebar"] [data-testid="stRadio"] { padding: 0 8px !important; }
-[data-testid="stSidebar"] [data-testid="stRadio"] label p { font-size: 12px !important; }
-[data-testid="stSidebar"] [data-testid="stMultiSelect"] { padding: 0 8px !important; }
-[data-testid="stSidebar"] .stMarkdown { padding: 0 8px !important; }
-[data-testid="stSidebar"] .stMarkdown p { font-size: 12px !important; font-weight: 600 !important; color: var(--text-2) !important; }
-
-/* ════════════════════════════
-   TOP BAR
-   ════════════════════════════ */
+/* ─── TOPBAR ─── */
 .topbar {
-  background: var(--white);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 1.5rem;
-  margin: 0 -1.5rem 20px -1.5rem;
-  display: flex; align-items: center; justify-content: space-between;
-  box-shadow: var(--shadow-sm);
+  background:var(--white); border-bottom:1px solid var(--border);
+  padding:12px 1.8rem; margin:0 -1.8rem 20px -1.8rem;
+  display:flex; align-items:center; justify-content:space-between;
+  box-shadow:var(--sh1);
 }
-.topbar-title {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 21px; font-weight: 700; color: var(--text);
-}
-.topbar-bread { font-size: 11px; color: var(--text-3); margin-top: 1px; }
-.topbar-badge {
-  background: var(--green-lt); color: var(--green-dk);
-  border: 1px solid rgba(0,132,61,0.2);
-  border-radius: 20px; padding: 4px 14px;
-  font-size: 11px; font-weight: 600;
+.tb-title { font-family:'Barlow Condensed',sans-serif; font-size:20px; font-weight:700; color:var(--text); }
+.tb-bread { font-size:11px; color:var(--text3); margin-top:1px; }
+.tb-badge {
+  background:var(--green-lt); color:var(--green-dk);
+  border:1px solid rgba(0,132,61,.2); border-radius:20px;
+  padding:4px 14px; font-size:11px; font-weight:600;
 }
 
-/* ════════════════════════════
-   KPI CARDS
-   ════════════════════════════ */
-.kpi-card {
-  background: var(--white); border: 1px solid var(--border);
-  border-radius: 10px; padding: 16px 18px;
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.18s, box-shadow 0.18s;
-  position: relative; overflow: hidden;
+/* ─── KPI CARDS ─── */
+.kcard {
+  background:var(--white); border:1px solid var(--border); border-radius:10px;
+  padding:16px 18px; box-shadow:var(--sh1);
+  transition:transform .18s,box-shadow .18s; position:relative; overflow:hidden;
 }
-.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.kpi-card::after {
-  content: ''; position: absolute;
-  top: 0; left: 0; right: 0; height: 3px; border-radius: 10px 10px 0 0;
-}
-.kpi-card.green::after  { background: var(--green); }
-.kpi-card.blue::after   { background: var(--blue); }
-.kpi-card.orange::after { background: var(--orange); }
-.kpi-card.purple::after { background: var(--purple); }
-.kpi-icon  { font-size: 18px; margin-bottom: 8px; display: block; }
-.kpi-label { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-3); margin-bottom: 4px; }
-.kpi-value { font-family: 'Barlow Condensed', sans-serif; font-size: 34px; font-weight: 700; line-height: 1; }
-.kpi-value.green  { color: var(--green); }
-.kpi-value.blue   { color: var(--blue); }
-.kpi-value.orange { color: var(--orange); }
-.kpi-value.purple { color: var(--purple); }
-.kpi-unit { font-size: 13px; font-weight: 500; color: var(--text-3); margin-left: 2px; }
-.kpi-sub  { font-size: 11px; color: var(--text-2); margin-top: 5px; }
+.kcard:hover { transform:translateY(-2px); box-shadow:var(--sh2); }
+.kcard::after { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:10px 10px 0 0; }
+.kcard.green::after  { background:var(--green); }
+.kcard.blue::after   { background:var(--blue); }
+.kcard.orange::after { background:var(--orange); }
+.kcard.purple::after { background:var(--purple); }
+.kc-ico   { font-size:17px; margin-bottom:8px; display:block; }
+.kc-lbl   { font-size:9px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--text3); margin-bottom:4px; }
+.kc-val   { font-family:'Barlow Condensed',sans-serif; font-size:32px; font-weight:700; line-height:1; }
+.kc-val.green  { color:var(--green); }  .kc-val.blue  { color:var(--blue); }
+.kc-val.orange { color:var(--orange); } .kc-val.purple{ color:var(--purple); }
+.kc-unit  { font-size:12px; font-weight:500; color:var(--text3); margin-left:2px; }
+.kc-sub   { font-size:11px; color:var(--text2); margin-top:5px; }
 
-/* ════════════════════════════
-   SECTION TITLE
-   ════════════════════════════ */
-.section-title {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--text-2); margin: 22px 0 10px 0;
-  display: flex; align-items: center; gap: 8px;
+/* ─── SECTION TITLE ─── */
+.stitle {
+  font-family:'Barlow Condensed',sans-serif; font-size:13px; font-weight:700;
+  letter-spacing:1px; text-transform:uppercase; color:var(--text2);
+  margin:20px 0 10px 0; display:flex; align-items:center; gap:8px;
 }
-.section-title::before {
-  content: ''; width: 3px; height: 14px;
-  background: var(--green); border-radius: 2px; display: inline-block;
-}
-.section-title.blue::before   { background: var(--blue); }
-.section-title.orange::before { background: var(--orange); }
-.section-title.purple::before { background: var(--purple); }
+.stitle::before { content:''; width:3px; height:14px; background:var(--green); border-radius:2px; display:inline-block; }
+.stitle.blue::before { background:var(--blue); }
+.stitle.orange::before { background:var(--orange); }
+.stitle.purple::before { background:var(--purple); }
 
-/* ════════════════════════════
-   DATAFRAME
-   ════════════════════════════ */
-[data-testid="stDataFrame"] {
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important; overflow: hidden !important;
-  box-shadow: var(--shadow-sm) !important;
+/* ─── CARDS génériques ─── */
+.card {
+  background:var(--white); border:1px solid var(--border);
+  border-radius:10px; padding:20px; box-shadow:var(--sh1);
+}
+.card-title {
+  font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.5px; color:var(--text2);
+  margin-bottom:14px; display:flex; align-items:center; gap:6px;
 }
 
-/* ════════════════════════════
-   TABS
-   ════════════════════════════ */
+/* ─── HISTORIQUE ITEMS ─── */
+.hist-item {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 12px; border-radius:7px; border:1px solid var(--border2);
+  background:var(--bg); margin-bottom:6px; transition:border-color .15s;
+}
+.hist-item:hover { border-color:var(--green); }
+.hist-item-name { font-size:12px; font-weight:600; color:var(--text); }
+.hist-item-date { font-size:10px; color:var(--text3); margin-top:2px; }
+.hist-tag {
+  display:inline-block; padding:2px 8px; border-radius:10px;
+  font-size:9px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+}
+.hist-tag.jorf  { background:var(--green-lt); color:var(--green-dk); }
+.hist-tag.safi  { background:var(--blue-lt);  color:var(--blue); }
+.hist-active { width:7px; height:7px; border-radius:50%; background:var(--green); flex-shrink:0; box-shadow:0 0 5px rgba(0,132,61,.5); }
+.hist-inactive { width:7px; height:7px; border-radius:50%; background:var(--border); flex-shrink:0; }
+
+/* ─── UPLOAD ZONE ─── */
+.upload-zone {
+  background:var(--white); border:1px solid var(--border); border-radius:10px;
+  padding:20px; box-shadow:var(--sh1);
+}
+.upload-zone .zone-title {
+  font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.5px; color:var(--text2);
+  margin-bottom:4px; display:flex; align-items:center; gap:6px;
+}
+.upload-zone .zone-desc { font-size:11px; color:var(--text3); margin-bottom:14px; }
+[data-testid="stFileUploader"] label { font-size:11px !important; color:var(--text2) !important; font-weight:600 !important; }
+[data-testid="stFileUploaderDropzone"] { background:var(--bg) !important; border:1.5px dashed var(--border) !important; border-radius:8px !important; }
+[data-testid="stFileUploaderDropzone"] p { font-size:11px !important; color:var(--text3) !important; }
+
+/* ─── FILTRE SECTION ─── */
+.filter-panel {
+  background:var(--white); border:1px solid var(--border); border-radius:10px;
+  padding:18px 20px; box-shadow:var(--sh1); margin-bottom:16px;
+}
+.filter-panel-title {
+  font-family:'Barlow Condensed',sans-serif; font-size:13px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.8px; color:var(--text2);
+  margin-bottom:12px; display:flex; align-items:center; gap:6px;
+}
+.filter-panel-title::before { content:''; width:3px; height:12px; background:var(--green); border-radius:2px; display:inline-block; }
+
+/* ─── ACCUEIL HERO ─── */
+.hero {
+  background:linear-gradient(135deg, var(--green) 0%, var(--green-dk) 100%);
+  border-radius:12px; padding:28px 32px; color:white; margin-bottom:20px;
+  position:relative; overflow:hidden; box-shadow:var(--sh2);
+}
+.hero::before {
+  content:''; position:absolute; top:-30px; right:-30px;
+  width:160px; height:160px; border-radius:50%;
+  background:rgba(255,255,255,.08);
+}
+.hero::after {
+  content:''; position:absolute; bottom:-50px; right:80px;
+  width:100px; height:100px; border-radius:50%;
+  background:rgba(255,255,255,.05);
+}
+.hero-title { font-family:'Barlow Condensed',sans-serif; font-size:30px; font-weight:800; line-height:1.1; margin-bottom:6px; }
+.hero-sub   { font-size:13px; opacity:.85; max-width:480px; line-height:1.5; }
+.hero-date  { font-size:11px; opacity:.7; margin-top:12px; letter-spacing:.5px; }
+.hero-stat  { text-align:right; position:relative; z-index:1; }
+.hero-stat-val  { font-family:'Barlow Condensed',sans-serif; font-size:38px; font-weight:800; line-height:1; }
+.hero-stat-lbl  { font-size:10px; opacity:.75; letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+
+/* ─── MODULE CARDS (accueil) ─── */
+.mcard {
+  background:var(--white); border:1px solid var(--border); border-radius:10px;
+  padding:18px 20px; box-shadow:var(--sh1); transition:transform .18s, box-shadow .18s;
+  cursor:pointer; height:100%;
+}
+.mcard:hover { transform:translateY(-3px); box-shadow:var(--sh2); border-color:var(--green); }
+.mcard-ico   { font-size:28px; margin-bottom:10px; }
+.mcard-title { font-family:'Barlow Condensed',sans-serif; font-size:17px; font-weight:700; color:var(--text); margin-bottom:4px; }
+.mcard-desc  { font-size:11px; color:var(--text3); line-height:1.5; }
+.mcard-badge {
+  display:inline-block; margin-top:10px; padding:3px 10px; border-radius:10px;
+  font-size:9px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+}
+.mcard-badge.active   { background:var(--green-lt); color:var(--green-dk); }
+.mcard-badge.soon     { background:#F1F3F5; color:var(--text3); }
+
+/* ─── TABS ─── */
 [data-testid="stTabs"] [data-baseweb="tab-list"] {
-  background: var(--white) !important;
-  border-bottom: 2px solid var(--border) !important; gap: 0 !important;
+  background:var(--white) !important; border-bottom:2px solid var(--border) !important; gap:0 !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"] {
-  background: transparent !important; color: var(--text-2) !important;
-  font-family: 'Barlow', sans-serif !important; font-size: 13px !important;
-  font-weight: 500 !important; padding: 10px 20px !important;
-  border-bottom: 2px solid transparent !important; margin-bottom: -2px !important;
+  background:transparent !important; color:var(--text2) !important;
+  font-family:'Barlow',sans-serif !important; font-size:13px !important; font-weight:500 !important;
+  padding:10px 20px !important; border-bottom:2px solid transparent !important; margin-bottom:-2px !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
-  color: var(--green) !important; border-bottom-color: var(--green) !important; font-weight: 700 !important;
+  color:var(--green) !important; border-bottom-color:var(--green) !important; font-weight:700 !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab-panel"] {
-  background: var(--white) !important;
-  border: 1px solid var(--border) !important; border-top: none !important;
-  border-radius: 0 0 8px 8px !important; padding: 20px !important;
+  background:var(--white) !important; border:1px solid var(--border) !important;
+  border-top:none !important; border-radius:0 0 8px 8px !important; padding:20px !important;
 }
 
-/* ════════════════════════════
-   INPUTS
-   ════════════════════════════ */
-[data-testid="stNumberInput"] input, [data-testid="stTextInput"] input {
-  background: var(--white) !important; border-color: var(--border) !important;
-  color: var(--text) !important; border-radius: 6px !important;
+/* ─── INPUTS ─── */
+[data-testid="stNumberInput"] input,[data-testid="stTextInput"] input {
+  background:var(--white) !important; border-color:var(--border) !important; color:var(--text) !important; border-radius:6px !important;
 }
-[data-testid="stNumberInput"] label, [data-testid="stTextInput"] label,
-[data-testid="stSelectbox"] label, [data-testid="stCheckbox"] label {
-  color: var(--text-2) !important; font-size: 12px !important; font-weight: 600 !important;
+[data-testid="stNumberInput"] label,[data-testid="stTextInput"] label,
+[data-testid="stSelectbox"] label,[data-testid="stCheckbox"] label {
+  color:var(--text2) !important; font-size:12px !important; font-weight:600 !important;
 }
 
-/* ════════════════════════════
-   BUTTONS (main area)
-   ════════════════════════════ */
+/* ─── BOUTONS (zone principale) ─── */
 .main .stButton button[kind="primary"] {
-  background: var(--green) !important; color: white !important;
-  border: none !important; border-radius: 7px !important;
-  font-weight: 700 !important; font-size: 13px !important;
-  padding: 10px 24px !important;
-  box-shadow: 0 2px 8px rgba(0,132,61,0.25) !important;
+  background:var(--green) !important; color:white !important; border:none !important;
+  border-radius:7px !important; font-weight:700 !important;
+  box-shadow:0 2px 8px rgba(0,132,61,.25) !important;
 }
-.main .stButton button[kind="primary"]:hover {
-  background: var(--green-dk) !important; transform: translateY(-1px) !important;
-}
+.main .stButton button[kind="primary"]:hover { background:var(--green-dk) !important; transform:translateY(-1px) !important; }
 .main .stButton button[kind="secondary"] {
-  background: var(--white) !important; color: var(--text) !important;
-  border: 1px solid var(--border) !important; border-radius: 7px !important;
+  background:var(--white) !important; color:var(--text) !important;
+  border:1px solid var(--border) !important; border-radius:7px !important;
 }
 
-/* ════════════════════════════
-   METRICS
-   ════════════════════════════ */
+/* ─── METRICS ─── */
 [data-testid="stMetric"] {
-  background: var(--white) !important; border: 1px solid var(--border) !important;
-  border-radius: 8px !important; padding: 14px 16px !important;
-  box-shadow: var(--shadow-sm) !important;
+  background:var(--white) !important; border:1px solid var(--border) !important;
+  border-radius:8px !important; padding:14px 16px !important; box-shadow:var(--sh1) !important;
 }
-[data-testid="stMetricLabel"] { color: var(--text-2) !important; font-size: 11px !important; font-weight: 600 !important; }
-[data-testid="stMetricValue"] { color: var(--text) !important; font-family: 'Barlow Condensed', sans-serif !important; font-size: 26px !important; }
+[data-testid="stMetricLabel"] { color:var(--text2) !important; font-size:11px !important; font-weight:600 !important; }
+[data-testid="stMetricValue"] { color:var(--text) !important; font-family:'Barlow Condensed',sans-serif !important; font-size:24px !important; }
 
-/* ════════════════════════════
-   PLACEHOLDER PAGES
-   ════════════════════════════ */
-.placeholder-card {
-  background: var(--white); border: 1px solid var(--border); border-radius: 12px;
-  padding: 56px 40px; text-align: center; margin-top: 40px; box-shadow: var(--shadow-sm);
-}
-.placeholder-card .emoji { font-size: 52px; margin-bottom: 16px; }
-.placeholder-card h2 {
-  font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700;
-  color: var(--text); margin-bottom: 8px;
-}
-.placeholder-card p { font-size: 14px; color: var(--text-2); max-width: 400px; margin: 0 auto; line-height: 1.6; }
-.badge-soon-green {
-  display: inline-block; margin-top: 24px;
-  background: var(--green-lt); color: var(--green-dk);
-  border: 1px solid rgba(0,132,61,0.2); border-radius: 20px;
-  padding: 5px 18px; font-size: 11px; font-weight: 700; letter-spacing: 1px;
-}
-.badge-soon-blue {
-  display: inline-block; margin-top: 24px;
-  background: var(--blue-lt); color: var(--blue);
-  border: 1px solid rgba(21,101,192,0.2); border-radius: 20px;
-  padding: 5px 18px; font-size: 11px; font-weight: 700; letter-spacing: 1px;
-}
+/* ─── DATAFRAME ─── */
+[data-testid="stDataFrame"] { border:1px solid var(--border) !important; border-radius:8px !important; overflow:hidden !important; box-shadow:var(--sh1) !important; }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* ─── DIVERS ─── */
+hr { border-color:var(--border2) !important; }
+[data-baseweb="tag"] { background:var(--green-lt) !important; border-color:rgba(0,132,61,.25) !important; }
+[data-baseweb="tag"] span { color:var(--green-dk) !important; }
+.stAlert { border-radius:8px !important; }
+[data-testid="stExpander"] { background:var(--white) !important; border:1px solid var(--border) !important; border-radius:8px !important; }
 
-/* ── Misc ── */
-hr { border-color: var(--border) !important; }
-[data-baseweb="tag"] { background: var(--green-lt) !important; border-color: rgba(0,132,61,0.25) !important; }
-[data-baseweb="tag"] span { color: var(--green-dk) !important; }
-.stAlert { border-radius: 8px !important; }
+/* ─── PLACEHOLDER ─── */
+.ph-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:56px 40px; text-align:center; margin-top:20px; box-shadow:var(--sh1); }
+.ph-card h2 { font-family:'Barlow Condensed',sans-serif; font-size:26px; font-weight:700; color:var(--text); margin-bottom:8px; }
+.ph-card p  { font-size:14px; color:var(--text2); max-width:400px; margin:0 auto; line-height:1.6; }
+.ph-badge-g { display:inline-block; margin-top:20px; background:var(--green-lt); color:var(--green-dk); border:1px solid rgba(0,132,61,.2); border-radius:20px; padding:5px 18px; font-size:10px; font-weight:700; letter-spacing:1px; }
+.ph-badge-b { display:inline-block; margin-top:20px; background:var(--blue-lt);  color:var(--blue);     border:1px solid rgba(21,101,192,.2); border-radius:20px; padding:5px 18px; font-size:10px; font-weight:700; letter-spacing:1px; }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 # PERSISTENCE & UTILS
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 CACHE_DIR  = ".ocp_cache"
-JORF_CACHE = os.path.join(CACHE_DIR, "jorf.pkl")
-SAFI_CACHE = os.path.join(CACHE_DIR, "safi.pkl")
-HIST_JORF  = os.path.join(CACHE_DIR, "hist_jorf.json")
-HIST_SAFI  = os.path.join(CACHE_DIR, "hist_safi.json")
-HIST_FILES = os.path.join(CACHE_DIR, "hist_files")
-os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(HIST_FILES, exist_ok=True)
+JORF_CACHE = os.path.join(CACHE_DIR,"jorf.pkl")
+SAFI_CACHE = os.path.join(CACHE_DIR,"safi.pkl")
+HIST_JORF  = os.path.join(CACHE_DIR,"hist_jorf.json")
+HIST_SAFI  = os.path.join(CACHE_DIR,"hist_safi.json")
+HIST_FILES = os.path.join(CACHE_DIR,"hist_files")
+os.makedirs(CACHE_DIR,exist_ok=True); os.makedirs(HIST_FILES,exist_ok=True)
 
-def save_cache(path, data):
-    with open(path, "wb") as f: pickle.dump(data, f)
-
-def load_cache(path):
-    if os.path.exists(path):
+def save_cache(p,d):
+    with open(p,"wb") as f: pickle.dump(d,f)
+def load_cache(p):
+    if os.path.exists(p):
         try:
-            with open(path, "rb") as f: return pickle.load(f)
+            with open(p,"rb") as f: return pickle.load(f)
         except: pass
     return None
-
-def clear_cache(path):
-    if os.path.exists(path): os.remove(path)
-
-def load_historique(hist_path):
-    if os.path.exists(hist_path):
+def clear_cache(p):
+    if os.path.exists(p): os.remove(p)
+def load_hist(p):
+    if os.path.exists(p):
         try:
-            with open(hist_path, "r", encoding="utf-8") as f: return json.load(f)
+            with open(p,"r",encoding="utf-8") as f: return json.load(f)
         except: pass
     return []
-
-def save_historique(hist_path, hist_list):
-    with open(hist_path, "w", encoding="utf-8") as f:
-        json.dump(hist_list, f, ensure_ascii=False, indent=2)
-
-def add_to_historique(hist_path, filename, file_bytes, file_type):
-    hist = load_historique(hist_path)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    phys_path = os.path.join(HIST_FILES, f"{file_type}_{ts}_{filename.replace(' ','_')}")
-    with open(phys_path, "wb") as f: f.write(file_bytes)
-    entry = {"filename": filename, "date_upload": datetime.now().strftime("%d/%m/%Y %H:%M"),
-             "path": phys_path, "type": file_type}
-    hist = [h for h in hist if not (h["filename"] == filename and h["date_upload"][:10] == entry["date_upload"][:10])]
-    hist.insert(0, entry)
-    save_historique(hist_path, hist[:20])
-    return phys_path
-
-def load_from_hist_entry(entry):
-    path = entry.get("path", "")
-    if os.path.exists(path):
-        with open(path, "rb") as f: return f.read()
+def save_hist(p,h):
+    with open(p,"w",encoding="utf-8") as f: json.dump(h,f,ensure_ascii=False,indent=2)
+def add_hist(p,filename,filebytes,ftype):
+    h=load_hist(p); ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+    pp=os.path.join(HIST_FILES,f"{ftype}_{ts}_{filename.replace(' ','_')}")
+    with open(pp,"wb") as f: f.write(filebytes)
+    e={"filename":filename,"date_upload":datetime.now().strftime("%d/%m/%Y %H:%M"),"path":pp,"type":ftype}
+    h=[x for x in h if not(x["filename"]==filename and x["date_upload"][:10]==e["date_upload"][:10])]
+    h.insert(0,e); save_hist(p,h[:20]); return pp
+def get_hist_bytes(e):
+    p=e.get("path","")
+    if os.path.exists(p):
+        with open(p,"rb") as f: return f.read()
     return None
 
-# ── Data helpers ──
-NOMS_MOIS  = {1:"Jan",2:"Fev",3:"Mar",4:"Avr",5:"Mai",6:"Jun",7:"Jul",8:"Aou",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
-ORDRE_MOIS = {v:k for k,v in NOMS_MOIS.items()}
+NOMS_MOIS={1:"Jan",2:"Fev",3:"Mar",4:"Avr",5:"Mai",6:"Jun",7:"Jul",8:"Aou",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+ORDRE_MOIS={v:k for k,v in NOMS_MOIS.items()}
 
-def force_nombre(v):
-    if pd.isna(v): return 0.0
-    if isinstance(v,(int,float)): return 0.0 if abs(v)<1e-6 else float(v)
+def force_n(v):
+    if pd.isna(v): return 0.
+    if isinstance(v,(int,float)): return 0. if abs(v)<1e-6 else float(v)
     s=str(v).strip()
-    if s in("-","","nan"): return 0.0
+    if s in("-","","nan"): return 0.
     n=re.sub(r'[^\d]','',s.replace("\xa0","").replace(" ",""))
-    if len(n)>12: return 0.0
+    if len(n)>12: return 0.
     try: return float(n)
-    except: return 0.0
-
-def en_milliers(v): return round(v/1000,1)
-def fmt_number(n):  return f"{n:,.1f}".replace(",", "\u202f")
-
-def date_sort_key(d):
+    except: return 0.
+def mil(v): return round(v/1000,1)
+def fmt(n): return f"{n:,.1f}".replace(","," ")
+def dsort(d):
     try: p=str(d).split("/"); return (int(p[2]),int(p[1]),int(p[0]))
     except: return (9999,99,99)
-
-def mois_sort_key(m):
+def msort(m):
     try: p=m.split(); return (int(p[1]),ORDRE_MOIS.get(p[0],99))
     except: return (9999,99)
-
-def extract_mois_label(date_str):
+def mlabel(d):
     try:
-        p=str(date_str).split("/")
+        p=str(d).split("/")
         if len(p)==3: return f"{NOMS_MOIS.get(int(p[1]),'?')} {p[2]}"
     except: pass
     return "Inconnu"
-
-SKIP_KW = ["total","recap","recapitulatif","annee","annuel","bilan","synthese","summary"]
-def is_data_sheet(n): return not any(k in n.strip().lower() for k in SKIP_KW)
-
-def detect_engine(raw):
+def filt(df,sel,col="Date"):
+    if not sel: return df
+    return df[df[col].isin(sel)]
+SKIP=["total","recap","recapitulatif","annee","annuel","bilan","synthese","summary"]
+def is_sheet(n): return not any(k in n.strip().lower() for k in SKIP)
+def detect_eng(raw):
     for e in ['openpyxl','pyxlsb','calamine']:
         try: pd.ExcelFile(io.BytesIO(raw),engine=e); return e
         except: continue
     raise ValueError("Impossible de lire ce fichier.")
-
-def read_file_bytes(file):
-    file.seek(0); raw=file.read()
-    fn=getattr(file,'name','').lower().strip()
+def read_bytes(file):
+    file.seek(0); raw=file.read(); fn=getattr(file,'name','').lower().strip()
     if fn.endswith('.xlsb'): return raw,'pyxlsb'
     if fn.endswith(('.xlsm','.xlsx')):
         try: pd.ExcelFile(io.BytesIO(raw),engine='openpyxl'); return raw,'openpyxl'
@@ -447,57 +383,46 @@ def read_file_bytes(file):
     if fn.endswith('.xls'):
         try: pd.ExcelFile(io.BytesIO(raw),engine='calamine'); return raw,'calamine'
         except: pass
-    return raw,detect_engine(raw)
+    return raw,detect_eng(raw)
+def last_val(df,col,col_d="Date"):
+    if df is None or df.empty: return 0.,None
+    t=df[df[col]>0].copy()
+    if t.empty: return 0.,None
+    t["_s"]=t[col_d].apply(dsort); last=t.sort_values("_s").iloc[-1]
+    return round(float(last[col]),1),last[col_d]
 
-def get_derniere_valeur(df,col,col_date="Date"):
-    if df is None or df.empty: return 0.0,None
-    tmp=df[df[col]>0].copy()
-    if tmp.empty: return 0.0,None
-    tmp["_s"]=tmp[col_date].apply(date_sort_key)
-    last=tmp.sort_values("_s").iloc[-1]
-    return round(float(last[col]),1),last[col_date]
-
-def appliquer_filtre(df,sel,col="Date"):
-    if not sel: return df
-    return df[df[col].isin(sel)]
-
-# ── Plotly theme ──
-PLOT_LAYOUT = dict(
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(247,248,250,0.8)',
-    font=dict(family='Barlow, sans-serif', color='#5A6A7A'),
-    xaxis=dict(gridcolor='#E2E6EA', linecolor='#E2E6EA', tickfont=dict(color='#5A6A7A',size=11)),
-    yaxis=dict(gridcolor='#E2E6EA', linecolor='#E2E6EA', tickfont=dict(color='#5A6A7A',size=11)),
-    legend=dict(bgcolor='rgba(255,255,255,0.9)', bordercolor='#E2E6EA', borderwidth=1,
-                font=dict(color='#1A2332', size=11)),
-    margin=dict(l=16,r=16,t=40,b=16),
-    height=360,
+# ── PLOT THEME ──
+PL=dict(
+    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(242,244,247,0.6)',
+    font=dict(family='Barlow,sans-serif',color='#4A5568'),
+    xaxis=dict(gridcolor='#E0E4EA',linecolor='#E0E4EA',tickfont=dict(color='#4A5568',size=11)),
+    yaxis=dict(gridcolor='#E0E4EA',linecolor='#E0E4EA',tickfont=dict(color='#4A5568',size=11)),
+    legend=dict(bgcolor='rgba(255,255,255,.9)',bordercolor='#E0E4EA',borderwidth=1,font=dict(color='#12202E',size=11)),
+    margin=dict(l=12,r=12,t=36,b=12), height=340,
 )
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 # PARSERS
-# ══════════════════════════════════════════════════════════════════════════════
-def parse_jorf(raw_bytes,engine):
-    df_raw=pd.read_excel(io.BytesIO(raw_bytes),sheet_name='EXPORT',header=None,engine=engine)
-    coords={"ENGRAIS":None,"CAMIONS":None,"VL":None}
-    for r in range(len(df_raw)):
-        lbl=" ".join(df_raw.iloc[r,0:3].astype(str)).upper()
-        if "EXPORT ENGRAIS" in lbl: coords["ENGRAIS"]=r
-        if "EXPORT CAMIONS" in lbl: coords["CAMIONS"]=r
-        if "VL CAMIONS"     in lbl: coords["VL"]=r
-    ld=df_raw.iloc[2,:]
-    cd=[j for j in range(3,len(ld)) if pd.notna(ld[j])]
+# ══════════════════════════════════════════════════════
+def parse_jorf(raw,eng):
+    df=pd.read_excel(io.BytesIO(raw),sheet_name='EXPORT',header=None,engine=eng)
+    co={"E":None,"C":None,"V":None}
+    for r in range(len(df)):
+        l=" ".join(df.iloc[r,0:3].astype(str)).upper()
+        if "EXPORT ENGRAIS" in l: co["E"]=r
+        if "EXPORT CAMIONS" in l: co["C"]=r
+        if "VL CAMIONS"     in l: co["V"]=r
+    ld=df.iloc[2,:]; cd=[j for j in range(3,len(ld)) if pd.notna(ld[j])]
     rows=[]
     for j in cd:
         dt=ld[j]; dl=dt.strftime('%d/%m/%Y') if hasattr(dt,'strftime') else str(dt).split(" ")[0]
-        v1=en_milliers(force_nombre(df_raw.iloc[coords["ENGRAIS"],j])) if coords["ENGRAIS"] is not None else 0.0
-        v2=en_milliers(force_nombre(df_raw.iloc[coords["CAMIONS"],j])) if coords["CAMIONS"] is not None else 0.0
-        v3=en_milliers(force_nombre(df_raw.iloc[coords["VL"],j]))      if coords["VL"]      is not None else 0.0
+        v1=mil(force_n(df.iloc[co["E"],j])) if co["E"] is not None else 0.
+        v2=mil(force_n(df.iloc[co["C"],j])) if co["C"] is not None else 0.
+        v3=mil(force_n(df.iloc[co["V"],j])) if co["V"] is not None else 0.
         rows.append({"Date":dl,"Export Engrais":v1,"Export Camions":v2,"VL Camions":v3,"TOTAL Jorf":round(v1+v2+v3,1)})
     return pd.DataFrame(rows)
-
-def parse_rade(raw_bytes,engine):
-    df=pd.read_excel(io.BytesIO(raw_bytes),sheet_name='Sit Navire',header=None,engine=engine)
+def parse_rade(raw,eng):
+    df=pd.read_excel(io.BytesIO(raw),sheet_name='Sit Navire',header=None,engine=eng)
     rows=[]
     for r in range(len(df)):
         dv=df.iloc[r,1]; val=df.iloc[r,3]
@@ -505,14 +430,12 @@ def parse_rade(raw_bytes,engine):
         sd=str(dv).strip()
         if sd in("","nan","Date"): continue
         dl=dv.strftime('%d/%m/%Y') if hasattr(dv,'strftime') else sd
-        rows.append({"Date":dl,"Engrais en attente":en_milliers(force_nombre(val))})
+        rows.append({"Date":dl,"Engrais en attente":mil(force_n(val))})
     return pd.DataFrame(rows) if rows else None
-
-def parse_safi(raw_bytes,engine):
-    xl=pd.ExcelFile(io.BytesIO(raw_bytes),engine=engine)
-    CJ=1; CE=31; CM=32; SR=6
+def parse_safi(raw,eng):
+    xl=pd.ExcelFile(io.BytesIO(raw),engine=eng); CJ=1;CE=31;CM=32;SR=6
     def norm(s):
-        acc={"é":"e","è":"e","ê":"e","ë":"e","à":"a","â":"a","ù":"u","û":"u","ô":"o","î":"i","ï":"i","ç":"c","ü":"u","ö":"o"}
+        acc={"é":"e","è":"e","ê":"e","à":"a","â":"a","ù":"u","û":"u","ô":"o","î":"i","ç":"c"}
         s=s.lower()
         for a,b in acc.items(): s=s.replace(a,b)
         return s
@@ -531,10 +454,10 @@ def parse_safi(raw_bytes,engine):
         return mn,an
     rows=[]
     for sheet in xl.sheet_names:
-        if not is_data_sheet(sheet): continue
+        if not is_sheet(sheet): continue
         mn,an=pm(sheet)
         if mn is None or an is None: continue
-        dfs=pd.read_excel(io.BytesIO(raw_bytes),sheet_name=sheet,header=None,engine=engine)
+        dfs=pd.read_excel(io.BytesIO(raw),sheet_name=sheet,header=None,engine=eng)
         tec=CE; tml=CM
         if dfs.shape[1]<=CM:
             fe=False
@@ -552,661 +475,614 @@ def parse_safi(raw_bytes,engine):
             try: jn=int(float(s))
             except: continue
             if jn<1 or jn>31: continue
-            te=en_milliers(force_nombre(dfs.iloc[ri,tec])) if tec<dfs.shape[1] else 0.0
-            tm=en_milliers(force_nombre(dfs.iloc[ri,tml])) if tml<dfs.shape[1] else 0.0
+            te=mil(force_n(dfs.iloc[ri,tec])) if tec<dfs.shape[1] else 0.
+            tm=mil(force_n(dfs.iloc[ri,tml])) if tml<dfs.shape[1] else 0.
             rows.append({"Mois":sheet,"Jour":jn,"Date":f"{jn:02d}/{mn:02d}/{an}","TSP Export":te,"TSP ML":tm,"TOTAL Safi":round(te+tm,1)})
     return pd.DataFrame(rows) if rows else None
 
-def charger_jorf(raw_bytes, filename):
-    ff=io.BytesIO(raw_bytes); ff.name=filename
-    raw,eng=read_file_bytes(ff)
-    jd=parse_jorf(raw,eng); rd=None
-    try: rd=parse_rade(raw,eng)
+def load_jorf(raw,fname):
+    ff=io.BytesIO(raw); ff.name=fname; r,e=read_bytes(ff)
+    jd=parse_jorf(r,e); rd=None
+    try: rd=parse_rade(r,e)
     except: pass
-    st.session_state.update({"jorf_df":jd,"rade_df":rd,"jorf_name":filename})
-    save_cache(JORF_CACHE,{"jorf_df":jd,"rade_df":rd,"filename":filename})
+    st.session_state.update({"jorf_df":jd,"rade_df":rd,"jorf_name":fname})
+    save_cache(JORF_CACHE,{"jorf_df":jd,"rade_df":rd,"filename":fname})
     return jd
-
-def charger_safi(raw_bytes, filename):
-    ff=io.BytesIO(raw_bytes); ff.name=filename
-    raw,eng=read_file_bytes(ff)
-    sd=parse_safi(raw,eng)
-    st.session_state.update({"safi_df":sd,"safi_name":filename})
-    save_cache(SAFI_CACHE,{"safi_df":sd,"filename":filename})
+def load_safi(raw,fname):
+    ff=io.BytesIO(raw); ff.name=fname; r,e=read_bytes(ff)
+    sd=parse_safi(r,e)
+    st.session_state.update({"safi_df":sd,"safi_name":fname})
+    save_cache(SAFI_CACHE,{"safi_df":sd,"filename":fname})
     return sd
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 # SESSION STATE INIT
-# ══════════════════════════════════════════════════════════════════════════════
-if "page" not in st.session_state:
-    st.session_state["page"] = "suivi"
+# ══════════════════════════════════════════════════════
+if "page" not in st.session_state: st.session_state["page"]="accueil"
+for key,cache in [("jorf_loaded",JORF_CACHE),("safi_loaded",SAFI_CACHE)]:
+    if key not in st.session_state:
+        c=load_cache(cache)
+        if c:
+            if "jorf" in key:
+                st.session_state["jorf_df"]=c.get("jorf_df")
+                st.session_state["rade_df"]=c.get("rade_df")
+                st.session_state["jorf_name"]=c.get("filename","")
+            else:
+                st.session_state["safi_df"]=c.get("safi_df")
+                st.session_state["safi_name"]=c.get("filename","")
+        st.session_state[key]=True
 
-if "jorf_loaded" not in st.session_state:
-    c=load_cache(JORF_CACHE)
-    if c:
-        st.session_state["jorf_df"]  =c.get("jorf_df")
-        st.session_state["rade_df"]  =c.get("rade_df")
-        st.session_state["jorf_name"]=c.get("filename","")
-    st.session_state["jorf_loaded"]=True
+EXCEL_T=["xlsx","xls","xlsm","xlsb"]
 
-if "safi_loaded" not in st.session_state:
-    c=load_cache(SAFI_CACHE)
-    if c:
-        st.session_state["safi_df"]  =c.get("safi_df")
-        st.session_state["safi_name"]=c.get("filename","")
-    st.session_state["safi_loaded"]=True
-
-jorf_df = st.session_state.get("jorf_df",None)
-rade_df = st.session_state.get("rade_df",None)
-safi_df = st.session_state.get("safi_df",None)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — VERTICAL NAVIGATION
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# SIDEBAR — NAVIGATION UNIQUEMENT
+# ══════════════════════════════════════════════════════
 with st.sidebar:
-    # Logo — image OCP si disponible, sinon placeholder vert
+    # Logo
     if os.path.exists("logo_ocp.png"):
-        import base64 as _b64
-        logo_b64 = _b64.b64encode(open("logo_ocp.png","rb").read()).decode()
-        logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="nav-logo-img"/>'
+        b64=base64.b64encode(open("logo_ocp.png","rb").read()).decode()
+        logo_html=f'<img src="data:image/png;base64,{b64}" class="sbl-img"/>'
     else:
-        logo_html = '<div class="nav-logo-box">OCP</div>'
-
+        logo_html='<div class="sbl-box">OCP</div>'
     st.markdown(f"""
-    <div class="nav-logo">
-        {logo_html}
-        <div>
-            <div class="nav-logo-name">OCP</div>
-            <div class="nav-logo-sub">Manufacturing</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    <div class="sbl">
+      {logo_html}
+      <div>
+        <div class="sbl-name">OCP</div>
+        <div class="sbl-sub">Manufacturing</div>
+      </div>
+    </div>""", unsafe_allow_html=True)
 
-    # ── Navigation ──
-    st.markdown('<div class="nav-sep">Navigation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="slbl">Navigation</div>', unsafe_allow_html=True)
 
-    NAV_ITEMS = [
-        ("suivi",    "🏭",  "Suivi Chargement"),
-        ("stock",    "📦",  "Simulation Stock"),
-        ("ventes",   "📊",  "Pipeline des Ventes"),
-        ("navires",  "🚢",  "Export Navire"),
+    NAV = [
+        ("accueil","🏠","Accueil"),
+        ("suivi",  "📋","Suivi Chargement"),
+        ("stock",  "📦","Simulation Stock"),
+        ("ventes", "📊","Pipeline des Ventes"),
+        ("navires","🚢","Export Navire"),
     ]
+    for key,icon,label in NAV:
+        t="primary" if st.session_state["page"]==key else "secondary"
+        if st.button(f"{icon}  {label}",key=f"nav_{key}",type=t,use_container_width=True):
+            st.session_state["page"]=key; st.rerun()
 
-    for key, icon, label in NAV_ITEMS:
-        is_active = st.session_state["page"] == key
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(f"{icon}  {label}", key=f"nav_{key}", type=btn_type, use_container_width=True):
-            st.session_state["page"] = key
-            st.rerun()
-
-    st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
-
-    # ── Files ──
-    st.markdown('<div class="nav-sep">Fichiers de données</div>', unsafe_allow_html=True)
-
-    EXCEL_TYPES = ["xlsx","xls","xlsm","xlsb"]
-    jorf_name = st.session_state.get("jorf_name","")
-    safi_name = st.session_state.get("safi_name","")
-
-    # Status indicators
-    dot_j = '<span class="status-dot ok"></span>' if jorf_name else '<span class="status-dot none"></span>'
-    dot_s = '<span class="status-dot ok"></span>' if safi_name else '<span class="status-dot none"></span>'
+    # Statut fichiers en bas de sidebar
+    st.markdown('<div class="shr"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="slbl">Données actives</div>', unsafe_allow_html=True)
+    jn=st.session_state.get("jorf_name",""); sn=st.session_state.get("safi_name","")
+    dj="🟢" if jn else "⚪"; ds="🟢" if sn else "⚪"
     st.markdown(f"""
-    <div style="padding:8px 12px 4px 16px;font-size:11px;color:#5A6A7A">
-      {dot_j} Jorf : <span style="color:{'#00843D' if jorf_name else '#9AAABB'};font-weight:600">{jorf_name or '—'}</span><br/>
-      {dot_s} Safi : <span style="color:{'#00843D' if safi_name else '#9AAABB'};font-weight:600">{safi_name or '—'}</span>
-    </div>
-    """, unsafe_allow_html=True)
+    <div style="padding:6px 14px 10px 14px;font-size:11px;color:#4A5568;line-height:2">
+      {dj} <b>Jorf :</b> <span style="color:{'#00843D' if jn else '#94A3B8'}">{jn or 'Non chargé'}</span><br/>
+      {ds} <b>Safi :</b> <span style="color:{'#00843D' if sn else '#94A3B8'}">{sn or 'Non chargé'}</span>
+    </div>""", unsafe_allow_html=True)
 
-    file_jorf = st.file_uploader("📂 Charger Jorf", type=EXCEL_TYPES, key="jorf_up")
-    file_safi = st.file_uploader("📂 Charger Safi", type=EXCEL_TYPES, key="safi_up")
+# ══════════════════════════════════════════════════════
+# RE-READ SESSION
+# ══════════════════════════════════════════════════════
+jorf_df=st.session_state.get("jorf_df"); rade_df=st.session_state.get("rade_df")
+safi_df=st.session_state.get("safi_df"); page=st.session_state["page"]
 
-    if file_jorf:
-        try:
-            jb,eng=read_file_bytes(file_jorf)
-            jd=parse_jorf(jb,eng); rd=None
-            try: rd=parse_rade(jb,eng)
-            except: pass
-            clear_cache(JORF_CACHE)
-            st.session_state.update({"jorf_df":jd,"rade_df":rd,"jorf_name":file_jorf.name})
-            save_cache(JORF_CACHE,{"jorf_df":jd,"rade_df":rd,"filename":file_jorf.name})
-            file_jorf.seek(0); add_to_historique(HIST_JORF,file_jorf.name,file_jorf.read(),"jorf")
-            jorf_df=jd; rade_df=rd
-            st.success("✅ Jorf chargé")
-        except Exception as e: st.error(f"Erreur : {e}")
-
-    if file_safi:
-        try:
-            sb,eng=read_file_bytes(file_safi)
-            sd=parse_safi(sb,eng)
-            clear_cache(SAFI_CACHE)
-            st.session_state.update({"safi_df":sd,"safi_name":file_safi.name})
-            save_cache(SAFI_CACHE,{"safi_df":sd,"filename":file_safi.name})
-            file_safi.seek(0); add_to_historique(HIST_SAFI,file_safi.name,file_safi.read(),"safi")
-            safi_df=sd
-            if sd is not None:
-                st.success("✅ Safi chargé")
-            else:
-                st.warning("Aucune feuille mensuelle détectée.")
-        except Exception as e: st.error(f"Erreur : {e}")
-
-    st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
-
-    # ── Historique ──
-    st.markdown('<div class="nav-sep">Historique</div>', unsafe_allow_html=True)
-    hist_jorf = load_historique(HIST_JORF)
-    hist_safi = load_historique(HIST_SAFI)
-
-    if hist_jorf:
-        with st.expander(f"Jorf ({len(hist_jorf)})", expanded=False):
-            for i,entry in enumerate(hist_jorf):
-                is_active=entry["filename"]==st.session_state.get("jorf_name","")
-                c1,c2=st.columns([3,1])
-                with c1:
-                    dot='🟢' if is_active else '⬜'
-                    st.markdown(f"<div style='font-size:11px;color:#1A2332'>{dot} {entry['filename']}<br/><span style='color:#9AAABB;font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
-                with c2:
-                    if not is_active:
-                        if st.button("↩️",key=f"rj_{i}"):
-                            raw=load_from_hist_entry(entry)
-                            if raw:
-                                try: charger_jorf(raw,entry["filename"]); st.rerun()
-                                except Exception as e: st.error(str(e))
-                            else: st.error("Introuvable.")
-    if hist_safi:
-        with st.expander(f"Safi ({len(hist_safi)})", expanded=False):
-            for i,entry in enumerate(hist_safi):
-                is_active=entry["filename"]==st.session_state.get("safi_name","")
-                c1,c2=st.columns([3,1])
-                with c1:
-                    dot='🟢' if is_active else '⬜'
-                    st.markdown(f"<div style='font-size:11px;color:#1A2332'>{dot} {entry['filename']}<br/><span style='color:#9AAABB;font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
-                with c2:
-                    if not is_active:
-                        if st.button("↩️",key=f"rs_{i}"):
-                            raw=load_from_hist_entry(entry)
-                            if raw:
-                                try: charger_safi(raw,entry["filename"]); st.rerun()
-                                except Exception as e: st.error(str(e))
-                            else: st.error("Introuvable.")
-
-    # ── Filtres (Suivi seulement) ──
-    if st.session_state["page"] == "suivi":
-        st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="nav-sep">Filtres — Suivi</div>', unsafe_allow_html=True)
-
-        def filtre_sidebar(df, label, key):
-            mois_map={}; annees=set()
-            for d in df["Date"].unique():
-                try:
-                    p=str(d).split("/"); annees.add(int(p[2]))
-                    ml=f"{NOMS_MOIS.get(int(p[1]),'?')} {p[2]}"
-                except: ml="Autre"
-                mois_map.setdefault(ml,[]).append(d)
-            for an in annees:
-                for num,nom in NOMS_MOIS.items():
-                    ml=f"{nom} {an}"
-                    if ml not in mois_map: mois_map[ml]=[]
-            mois_tries=sorted(mois_map.keys(),key=mois_sort_key)
-            options=[m if mois_map[m] else f"{m} —" for m in mois_tries]
-            mode=st.radio(label,["Tout","Mois","Dates"],horizontal=True,key=f"{key}_mode")
-            if mode=="Tout": return [],"Toute la période"
-            elif mode=="Mois":
-                choix=st.multiselect("Mois",options=options,default=[],key=f"{key}_mois")
-                if not choix: return [],"Toute la période"
-                ds=[]; lb=[]
-                for m in choix:
-                    cle=m.rstrip(" —"); ds+=mois_map.get(cle,[]); lb.append(cle)
-                return ds,", ".join(lb)
-            else:
-                all_d=sorted(df["Date"].unique().tolist(),key=lambda d:tuple(int(x) for x in str(d).split("/"))[::-1])
-                choix=st.multiselect("Dates",all_d,key=f"{key}_dates")
-                if not choix: return [],"Toute la période"
-                return choix,f"{len(choix)} date(s)"
-
-        if jorf_df is not None:
-            st.markdown("**Jorf Lasfar**")
-            sel_jorf,label_jorf=filtre_sidebar(jorf_df,"Jorf","jorf")
-        else: sel_jorf,label_jorf=[],"Toute la période"
-
-        if safi_df is not None:
-            st.markdown("**Safi**")
-            sel_safi,label_safi=filtre_sidebar(safi_df,"Safi","safi")
-        else: sel_safi,label_safi=[],"Toute la période"
-
-        st.session_state["sel_jorf"]=sel_jorf
-        st.session_state["label_jorf"]=label_jorf
-        st.session_state["sel_safi"]=sel_safi
-        st.session_state["label_safi"]=label_safi
-
-# Re-read data after possible upload
-jorf_df = st.session_state.get("jorf_df",None)
-rade_df = st.session_state.get("rade_df",None)
-safi_df = st.session_state.get("safi_df",None)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE ROUTER
-# ══════════════════════════════════════════════════════════════════════════════
-page = st.session_state["page"]
-
-PAGE_TITLES = {
-    "suivi":   ("🏭 Suivi Chargement",   "Jorf Lasfar & Safi — Données consolidées par jour"),
-    "stock":   ("📦 Simulation de Stock","Projection matières premières — navires & consommation"),
-    "ventes":  ("📊 Pipeline des Ventes","Suivi des opportunités et performances commerciales"),
-    "navires": ("🚢 Export Navire",       "Planification et suivi des chargements navires"),
+# ══════════════════════════════════════════════════════
+# TOPBAR
+# ══════════════════════════════════════════════════════
+TITLES={
+    "accueil": ("🏠 Tableau de Bord",    "Vue d'ensemble & historique"),
+    "suivi":   ("📋 Suivi Chargement",   "Jorf Lasfar & Safi — données par jour"),
+    "stock":   ("📦 Simulation Stock",   "Projection matières premières"),
+    "ventes":  ("📊 Pipeline des Ventes","Performances commerciales"),
+    "navires": ("🚢 Export Navire",       "Planification chargements"),
 }
-title, subtitle = PAGE_TITLES[page]
-
-# Top bar
+t_title,t_sub=TITLES[page]
 st.markdown(f"""
 <div class="topbar">
-  <div class="topbar-left">
-    <div>
-      <div class="topbar-title">{title}</div>
-      <div class="topbar-breadcrumb">OCP Manufacturing &nbsp;›&nbsp; {title.split(' ',1)[1]}</div>
-    </div>
+  <div>
+    <div class="tb-title">{t_title}</div>
+    <div class="tb-bread">OCP Manufacturing &nbsp;›&nbsp; {t_title.split(' ',1)[1]}</div>
   </div>
-  <div class="topbar-badge">{subtitle}</div>
-</div>
-""", unsafe_allow_html=True)
+  <div class="tb-badge">{t_sub}</div>
+</div>""", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE: SUIVI CHARGEMENT
+# PAGE : ACCUEIL
 # ══════════════════════════════════════════════════════════════════════════════
-if page == "suivi":
-    sel_jorf   = st.session_state.get("sel_jorf",  [])
-    label_jorf = st.session_state.get("label_jorf","Toute la période")
-    sel_safi   = st.session_state.get("sel_safi",  [])
-    label_safi = st.session_state.get("label_safi","Toute la période")
+if page=="accueil":
+    # Hero banner
+    jorf_kpi=jorf_df; safi_kpi=safi_df
+    cj=round(float(jorf_kpi["TOTAL Jorf"].sum()),1) if jorf_kpi is not None else 0.
+    cs=round(float(safi_kpi["TOTAL Safi"].sum()),1) if safi_kpi is not None else 0.
+    ct=round(cj+cs,1)
+    today=datetime.now().strftime("%A %d %B %Y")
 
-    jorf_kpi = appliquer_filtre(jorf_df,sel_jorf) if jorf_df is not None else None
-    safi_kpi = appliquer_filtre(safi_df,sel_safi) if safi_df is not None else None
-    rade_kpi = appliquer_filtre(rade_df,sel_jorf) if rade_df is not None else None
+    h1,h2=st.columns([2,1])
+    with h1:
+        st.markdown(f"""
+        <div class="hero">
+          <div class="hero-title">OCP Manufacturing Dashboard</div>
+          <div class="hero-sub">Suivi consolidé des chargements, simulation de stock et pilotage des opérations — Jorf Lasfar & Safi.</div>
+          <div class="hero-date">📅 {today}</div>
+        </div>""", unsafe_allow_html=True)
+    with h2:
+        st.markdown(f"""
+        <div class="hero" style="height:100%;justify-content:center;display:flex;flex-direction:column;text-align:center">
+          <div class="hero-stat-val">{fmt(ct)}</div>
+          <div class="hero-stat-lbl">KT — Total Jorf + Safi</div>
+          <div style="margin-top:14px;opacity:.7;font-size:11px">Jorf : {fmt(cj)} KT &nbsp;·&nbsp; Safi : {fmt(cs)} KT</div>
+        </div>""", unsafe_allow_html=True)
 
-    cumul_jorf  = round(float(jorf_kpi["TOTAL Jorf"].sum()),1) if jorf_kpi is not None else 0.0
-    cumul_safi  = round(float(safi_kpi["TOTAL Safi"].sum()),1) if safi_kpi is not None else 0.0
-    cumul_total = round(cumul_jorf+cumul_safi,1)
-    rade_j_val,rade_j_date = get_derniere_valeur(rade_kpi,"Engrais en attente") if rade_kpi is not None else (0.0,None)
+    # Modules disponibles
+    st.markdown('<div class="stitle">Modules disponibles</div>', unsafe_allow_html=True)
+    m1,m2,m3,m4=st.columns(4)
+    modules=[
+        (m1,"📋","Suivi Chargement","Tableau consolidé des chargements journaliers par site.","active","suivi"),
+        (m2,"📦","Simulation Stock","Projection du stock matières premières avec arrivées navires.","active","stock"),
+        (m3,"📊","Pipeline des Ventes","Suivi des opportunités commerciales et performances.","soon","ventes"),
+        (m4,"🚢","Export Navire","Planification et suivi des chargements et escales navires.","soon","navires"),
+    ]
+    for col,ico,title,desc,status,nav_key in modules:
+        with col:
+            badge="✅ Disponible" if status=="active" else "🔜 Prochainement"
+            st.markdown(f"""
+            <div class="mcard">
+              <div class="mcard-ico">{ico}</div>
+              <div class="mcard-title">{title}</div>
+              <div class="mcard-desc">{desc}</div>
+              <div class="mcard-badge {status}">{badge}</div>
+            </div>""", unsafe_allow_html=True)
+            if status=="active":
+                if st.button(f"Ouvrir →",key=f"open_{nav_key}",use_container_width=True):
+                    st.session_state["page"]=nav_key; st.rerun()
 
-    # KPI row
-    k1,k2,k3,k4 = st.columns(4)
-    def kpi(col, color, icon, label, value, sub, extra=""):
+    # Historique des fichiers
+    st.markdown('<div class="stitle">Historique des fichiers chargés</div>', unsafe_allow_html=True)
+    hj=load_hist(HIST_JORF); hs=load_hist(HIST_SAFI)
+
+    col_hj,col_hs=st.columns(2)
+    for col,hist,hist_path,label,color,loader_fn in [
+        (col_hj,hj,HIST_JORF,"Jorf Lasfar","jorf",load_jorf),
+        (col_hs,hs,HIST_SAFI,"Safi","safi",load_safi),
+    ]:
         with col:
             st.markdown(f"""
-            <div class="kpi-card {color}">
-                <span class="kpi-icon">{icon}</span>
-                <div class="kpi-label">{label}</div>
-                <div class="kpi-value {color}">{fmt_number(value)}<span class="kpi-unit">KT</span></div>
-                <div class="kpi-sub">{sub}</div>
-                {f'<div style="font-size:10px;color:var(--text-3);margin-top:4px">{extra}</div>' if extra else ''}
-            </div>""", unsafe_allow_html=True)
+            <div class="card">
+              <div class="card-title">📁 Historique — {label}</div>""", unsafe_allow_html=True)
+            if hist:
+                active_name=st.session_state.get(f"{color}_name","")
+                for i,e in enumerate(hist[:8]):
+                    is_act=e["filename"]==active_name
+                    dot_cls="hist-active" if is_act else "hist-inactive"
+                    act_txt=" — <b style='color:#00843D'>Actif</b>" if is_act else ""
+                    st.markdown(f"""
+                    <div class="hist-item">
+                      <div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span class="{dot_cls}"></span>
+                          <span class="hist-item-name">{e['filename']}</span>
+                          <span class="hist-tag {color}">{color.upper()}</span>
+                        </div>
+                        <div class="hist-item-date" style="margin-left:15px">{e['date_upload']}{act_txt}</div>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+                    if not is_act:
+                        if st.button(f"↩ Recharger",key=f"rl_{color}_{i}",use_container_width=True):
+                            raw=get_hist_bytes(e)
+                            if raw:
+                                try: loader_fn(raw,e["filename"]); st.rerun()
+                                except Exception as ex: st.error(str(ex))
+                            else: st.error("Fichier introuvable.")
+            else:
+                st.markdown(f'<div style="color:#94A3B8;font-size:12px;padding:12px 0">Aucun fichier {label} dans l\'historique.</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    kpi(k1,"green","🏭","Total Jorf",cumul_jorf,
-        "Export Engrais · Camions · VL" if jorf_df is not None else "Fichier non chargé")
-    with k2:
-        if rade_df is not None and rade_j_date:
-            st.markdown(f"""
-            <div class="kpi-card purple">
-                <span class="kpi-icon">⚓</span>
-                <div class="kpi-label">Rade Jorf</div>
-                <div class="kpi-value purple">{fmt_number(rade_j_val)}<span class="kpi-unit">KT</span></div>
-                <div class="kpi-sub">Engrais en attente</div>
-                <div style="font-size:10px;color:var(--text-2);margin-top:4px">📅 {rade_j_date}</div>
-            </div>""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE : SUIVI CHARGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+elif page=="suivi":
+
+    # ── Section chargement de fichiers ──
+    st.markdown('<div class="stitle">Chargement des fichiers</div>', unsafe_allow_html=True)
+    uc1,uc2=st.columns(2)
+
+    with uc1:
+        st.markdown("""<div class="upload-zone">
+        <div class="zone-title">📂 Fichier Jorf Lasfar</div>
+        <div class="zone-desc">Fichier Excel avec feuille EXPORT et Sit Navire</div>""", unsafe_allow_html=True)
+        file_jorf=st.file_uploader("Choisir fichier Jorf",type=EXCEL_T,key="jorf_up",label_visibility="collapsed")
+        jn=st.session_state.get("jorf_name","")
+        if jn: st.success(f"✅ Actif : **{jn}**")
+        if file_jorf:
+            try:
+                jb,eng=read_bytes(file_jorf); jd=parse_jorf(jb,eng); rd=None
+                try: rd=parse_rade(jb,eng)
+                except: pass
+                clear_cache(JORF_CACHE)
+                st.session_state.update({"jorf_df":jd,"rade_df":rd,"jorf_name":file_jorf.name})
+                save_cache(JORF_CACHE,{"jorf_df":jd,"rade_df":rd,"filename":file_jorf.name})
+                file_jorf.seek(0); add_hist(HIST_JORF,file_jorf.name,file_jorf.read(),"jorf")
+                jorf_df=jd; rade_df=rd; st.success("✅ Jorf chargé !")
+            except Exception as e: st.error(f"Erreur : {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with uc2:
+        st.markdown("""<div class="upload-zone">
+        <div class="zone-title">📂 Fichier Safi</div>
+        <div class="zone-desc">Fichier Excel avec feuilles mensuelles TSP Export / ML</div>""", unsafe_allow_html=True)
+        file_safi=st.file_uploader("Choisir fichier Safi",type=EXCEL_T,key="safi_up",label_visibility="collapsed")
+        sn=st.session_state.get("safi_name","")
+        if sn: st.success(f"✅ Actif : **{sn}**")
+        if file_safi:
+            try:
+                sb,eng=read_bytes(file_safi); sd=parse_safi(sb,eng)
+                clear_cache(SAFI_CACHE)
+                st.session_state.update({"safi_df":sd,"safi_name":file_safi.name})
+                save_cache(SAFI_CACHE,{"safi_df":sd,"filename":file_safi.name})
+                file_safi.seek(0); add_hist(HIST_SAFI,file_safi.name,file_safi.read(),"safi")
+                safi_df=sd
+                if sd is not None: st.success("✅ Safi chargé !")
+                else: st.warning("Aucune feuille mensuelle détectée.")
+            except Exception as e: st.error(f"Erreur : {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Re-read after upload ──
+    jorf_df=st.session_state.get("jorf_df"); rade_df=st.session_state.get("rade_df"); safi_df=st.session_state.get("safi_df")
+
+    # ── Section filtres ──
+    st.markdown('<div class="stitle">Filtrage des données</div>', unsafe_allow_html=True)
+
+    def filtre_widget(df,label,key):
+        mois_map={}; annees=set()
+        for d in df["Date"].unique():
+            try:
+                p=str(d).split("/"); annees.add(int(p[2]))
+                ml=f"{NOMS_MOIS.get(int(p[1]),'?')} {p[2]}"
+            except: ml="Autre"
+            mois_map.setdefault(ml,[]).append(d)
+        for an in annees:
+            for num,nom in NOMS_MOIS.items():
+                ml=f"{nom} {an}"
+                if ml not in mois_map: mois_map[ml]=[]
+        mois_tries=sorted(mois_map.keys(),key=msort)
+        opts=[m if mois_map[m] else f"{m} —" for m in mois_tries]
+        mode=st.radio(f"Filtrer **{label}** par",["Tout","Mois","Dates"],horizontal=True,key=f"{key}_mode")
+        if mode=="Tout": return [],"Toute la période"
+        elif mode=="Mois":
+            choix=st.multiselect("Sélectionner les mois",options=opts,default=[],key=f"{key}_mois")
+            if not choix: return [],"Toute la période"
+            ds=[]; lb=[]
+            for m in choix:
+                cl=m.rstrip(" —"); ds+=mois_map.get(cl,[]); lb.append(cl)
+            return ds,", ".join(lb)
         else:
-            kpi(k2,"purple","⚓","Rade Jorf",0.0,"Fichier non chargé")
-    kpi(k3,"blue","🌊","Total Safi",cumul_safi,
-        "TSP Export · TSP ML" if safi_df is not None else "Fichier non chargé")
-    kpi(k4,"orange","📊","Jorf + Safi",cumul_total,"Consolidé toutes unités")
+            all_d=sorted(df["Date"].unique().tolist(),key=lambda x:tuple(int(v) for v in str(x).split("/"))[::-1])
+            choix=st.multiselect("Sélectionner les dates",all_d,key=f"{key}_dates")
+            if not choix: return [],"Toute la période"
+            return choix,f"{len(choix)} date(s)"
 
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+    fc1,fc2=st.columns(2)
+    with fc1:
+        st.markdown('<div class="filter-panel"><div class="filter-panel-title">📍 Jorf Lasfar</div>', unsafe_allow_html=True)
+        if jorf_df is not None:
+            sel_jorf,lbl_jorf=filtre_widget(jorf_df,"Jorf","jorf")
+        else:
+            st.info("Chargez le fichier Jorf pour activer les filtres."); sel_jorf,lbl_jorf=[],"Toute la période"
+        st.markdown('</div>', unsafe_allow_html=True)
+    with fc2:
+        st.markdown('<div class="filter-panel"><div class="filter-panel-title">🌊 Safi</div>', unsafe_allow_html=True)
+        if safi_df is not None:
+            sel_safi,lbl_safi=filtre_widget(safi_df,"Safi","safi")
+        else:
+            st.info("Chargez le fichier Safi pour activer les filtres."); sel_safi,lbl_safi=[],"Toute la période"
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Table consolidated
-    st.markdown('<div class="section-title">Tableau consolidé — par jour (KT)</div>', unsafe_allow_html=True)
+    # ── KPIs ──
+    jorf_k=filt(jorf_df,sel_jorf) if jorf_df is not None else None
+    safi_k=filt(safi_df,sel_safi) if safi_df is not None else None
+    rade_k=filt(rade_df,sel_jorf) if rade_df is not None else None
+    cj=round(float(jorf_k["TOTAL Jorf"].sum()),1) if jorf_k is not None else 0.
+    cs=round(float(safi_k["TOTAL Safi"].sum()),1) if safi_k is not None else 0.
+    ct=round(cj+cs,1)
+    rv,rd_=last_val(rade_k,"Engrais en attente") if rade_k is not None else (0.,None)
 
-    any_data = jorf_df is not None or safi_df is not None or rade_df is not None
+    periode=f"Filtre : {lbl_jorf} / {lbl_safi}" if (sel_jorf or sel_safi) else "Toute la période"
+    st.markdown(f'<div class="stitle">Cumul à date — {periode}</div>', unsafe_allow_html=True)
+
+    k1,k2,k3,k4=st.columns(4)
+    def kpi(col,color,ico,lbl,val,sub,extra=""):
+        with col:
+            st.markdown(f"""
+            <div class="kcard {color}">
+              <span class="kc-ico">{ico}</span>
+              <div class="kc-lbl">{lbl}</div>
+              <div class="kc-val {color}">{fmt(val)}<span class="kc-unit">KT</span></div>
+              <div class="kc-sub">{sub}</div>
+              {f'<div style="font-size:10px;color:#94A3B8;margin-top:3px">{extra}</div>' if extra else ''}
+            </div>""", unsafe_allow_html=True)
+
+    kpi(k1,"green","🏭","Total Jorf",cj,"Export Engrais · Camions · VL" if jorf_df is not None else "Non chargé")
+    with k2:
+        if rade_df is not None and rd_:
+            st.markdown(f"""
+            <div class="kcard purple">
+              <span class="kc-ico">⚓</span>
+              <div class="kc-lbl">Rade Jorf</div>
+              <div class="kc-val purple">{fmt(rv)}<span class="kc-unit">KT</span></div>
+              <div class="kc-sub">Engrais en attente</div>
+              <div style="font-size:10px;color:#94A3B8;margin-top:3px">📅 {rd_}</div>
+            </div>""", unsafe_allow_html=True)
+        else: kpi(k2,"purple","⚓","Rade Jorf",0.,"Non chargé")
+    kpi(k3,"blue","🌊","Total Safi",cs,"TSP Export · TSP ML" if safi_df is not None else "Non chargé")
+    kpi(k4,"orange","📊","Jorf + Safi",ct,"Consolidé toutes unités")
+
+    st.markdown("<div style='margin-top:6px'></div>", unsafe_allow_html=True)
+
+    # ── Tableau consolidé ──
+    st.markdown('<div class="stitle">Tableau consolidé — par jour (KT)</div>', unsafe_allow_html=True)
+
+    any_data=jorf_df is not None or safi_df is not None or rade_df is not None
     if any_data:
-        jorf_f = appliquer_filtre(jorf_df,sel_jorf) if jorf_df is not None else None
-        rade_f = appliquer_filtre(rade_df,sel_jorf) if rade_df is not None else None
-        safi_f = appliquer_filtre(safi_df,sel_safi) if safi_df is not None else None
-
-        all_dates=set()
-        if jorf_f is not None: all_dates|=set(jorf_f["Date"].unique())
-        if rade_f is not None: all_dates|=set(rade_f["Date"].unique())
-        if safi_f is not None: all_dates|=set(safi_f["Date"].unique())
-        all_dates=sorted(all_dates,key=date_sort_key)
-
-        unified_rows=[]
-        for d in all_dates:
+        jf=filt(jorf_df,sel_jorf) if jorf_df is not None else None
+        rf=filt(rade_df,sel_jorf) if rade_df is not None else None
+        sf=filt(safi_df,sel_safi) if safi_df is not None else None
+        all_d=set()
+        if jf is not None: all_d|=set(jf["Date"].unique())
+        if rf is not None: all_d|=set(rf["Date"].unique())
+        if sf is not None: all_d|=set(sf["Date"].unique())
+        all_d=sorted(all_d,key=dsort)
+        rows=[]
+        for d in all_d:
             row={"Date":d}
-            if jorf_f is not None:
-                r=jorf_f[jorf_f["Date"]==d]
-                row["J_Engrais"]=round(r["Export Engrais"].sum(),1) if not r.empty else 0.0
-                row["J_Camions"]=round(r["Export Camions"].sum(),1) if not r.empty else 0.0
-                row["J_VL"]     =round(r["VL Camions"].sum(),1)     if not r.empty else 0.0
-            if safi_f is not None:
-                r=safi_f[safi_f["Date"]==d]
-                row["S_Engrais"]=round(r["TSP Export"].sum(),1) if not r.empty else 0.0
-                row["S_VL"]     =round(r["TSP ML"].sum(),1)     if not r.empty else 0.0
-            jt=round(row.get("J_Engrais",0)+row.get("J_Camions",0)+row.get("J_VL",0),1) if jorf_f is not None else 0.0
-            st_=round(row.get("S_Engrais",0)+row.get("S_VL",0),1) if safi_f is not None else 0.0
-            if jorf_f is not None: row["J_TOTAL"]=jt
-            if safi_f is not None: row["S_TOTAL"]=st_
+            if jf is not None:
+                r=jf[jf["Date"]==d]
+                row["J_Eng"]=round(r["Export Engrais"].sum(),1) if not r.empty else 0.
+                row["J_Cam"]=round(r["Export Camions"].sum(),1) if not r.empty else 0.
+                row["J_VL"] =round(r["VL Camions"].sum(),1)     if not r.empty else 0.
+            if sf is not None:
+                r=sf[sf["Date"]==d]
+                row["S_Eng"]=round(r["TSP Export"].sum(),1) if not r.empty else 0.
+                row["S_VL"] =round(r["TSP ML"].sum(),1)     if not r.empty else 0.
+            jt=round(row.get("J_Eng",0)+row.get("J_Cam",0)+row.get("J_VL",0),1) if jf is not None else 0.
+            st_=round(row.get("S_Eng",0)+row.get("S_VL",0),1) if sf is not None else 0.
+            if jf is not None: row["J_TOT"]=jt
+            if sf is not None: row["S_TOT"]=st_
             row["TOTAL"]=round(jt+st_,1)
-            if rade_f is not None:
-                r=rade_f[rade_f["Date"]==d]
-                row["RADE_J"]=round(r["Engrais en attente"].sum(),1) if not r.empty else 0.0
-            unified_rows.append(row)
+            if rf is not None:
+                r=rf[rf["Date"]==d]; row["RADE"]=round(r["Engrais en attente"].sum(),1) if not r.empty else 0.
+            rows.append(row)
+        udf=pd.DataFrame(rows)
+        co=["Date"]
+        if jf is not None: co+=["J_Eng","J_Cam","J_VL","J_TOT"]
+        if sf is not None: co+=["S_Eng","S_VL","S_TOT"]
+        co+=["TOTAL"]
+        if rf is not None: co+=["RADE"]
+        co=[c for c in co if c in udf.columns]; udf=udf[co]
+        tr={"Date":"TOTAL GÉNÉRAL"}
+        for c in udf.columns:
+            if c=="Date": continue
+            elif c=="RADE": tr[c]=None
+            else: tr[c]=round(udf[c].sum(),1)
+        disp=pd.concat([udf,pd.DataFrame([tr])],ignore_index=True)
+        nm={"J_Eng":"Engrais","J_Cam":"Camions","J_VL":"VL","J_TOT":"▶ Total Jorf",
+            "S_Eng":"TSP Export","S_VL":"TSP ML","S_TOT":"▶ Total Safi",
+            "TOTAL":"▶ Total Cumulé","RADE":"Rade Jorf"}
+        cfg={"Date":st.column_config.TextColumn("Date",width=90)}
+        for c,n in nm.items():
+            if c in disp.columns: cfg[c]=st.column_config.NumberColumn(n,format="%.1f")
+        st.dataframe(disp,use_container_width=True,hide_index=True,height=min(660,45+35*len(disp)),column_config=cfg)
 
-        unified_df=pd.DataFrame(unified_rows)
-        col_order=["Date"]
-        if jorf_f is not None: col_order+=["J_Engrais","J_Camions","J_VL","J_TOTAL"]
-        if safi_f is not None: col_order+=["S_Engrais","S_VL","S_TOTAL"]
-        col_order+=["TOTAL"]
-        if rade_f is not None: col_order+=["RADE_J"]
-        col_order=[c for c in col_order if c in unified_df.columns]
-        unified_df=unified_df[col_order]
-
-        total_row={"Date":"TOTAL GÉNÉRAL"}
-        for col in unified_df.columns:
-            if col=="Date": continue
-            elif col=="RADE_J": total_row[col]=None
-            else: total_row[col]=round(unified_df[col].sum(),1)
-        disp=pd.concat([unified_df,pd.DataFrame([total_row])],ignore_index=True)
-
-        col_cfg={"Date":st.column_config.TextColumn("Date",width=90)}
-        names={"J_Engrais":"Engrais","J_Camions":"Camions","J_VL":"VL","J_TOTAL":"▶ Total Jorf",
-               "S_Engrais":"Engrais","S_VL":"TSP ML","S_TOTAL":"▶ Total Safi",
-               "TOTAL":"▶ Total Cumulé","RADE_J":"Rade Jorf"}
-        for c,n in names.items():
-            if c in disp.columns:
-                col_cfg[c]=st.column_config.NumberColumn(n,format="%.1f")
-
-        st.dataframe(disp,use_container_width=True,hide_index=True,
-                     height=min(680,45+35*len(disp)),column_config=col_cfg)
-
-        # Copy buttons
-        cb1,cb2,cb3,_ = st.columns([1,1,1,2])
-        def copy_btn(container, df, col, label, key):
-            vals = df[df["Date"]!="TOTAL GÉNÉRAL"][col].dropna().tolist()
-            txt = "\t".join(str(round(v,1)) for v in vals)
-            bid = f"cbtn_{key}"
+        # Boutons copier
+        cb1,cb2,cb3,_=st.columns([1,1,1,2])
+        def copy_btn(container,df,col,lbl,key):
+            vals=df[df["Date"]!="TOTAL GÉNÉRAL"][col].dropna().tolist()
+            txt="\t".join(str(round(v,1)) for v in vals); bid=f"cb_{key}"
             with container:
                 st.components.v1.html(f"""
-                <button class="copy-btn" id="{bid}"
-                  onclick="navigator.clipboard.writeText('{txt}').then(()=>{{
-                    this.innerHTML='✓ Copié'; this.classList.add('copied');
-                    setTimeout(()=>{{this.innerHTML='📋 {label}'; this.classList.remove('copied')}},2000)
-                  }})">📋 {label}</button>
-                <style>.copy-btn{{background:#F7F8FA;color:#5A6A7A;border:1px solid #E2E6EA;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Barlow,sans-serif;transition:all .15s}}.copy-btn:hover,.copy-btn.copied{{background:#E8F5EE;color:#005C2A;border-color:rgba(0,132,61,.3)}}</style>
-                """, height=40)
+                <button id="{bid}" onclick="navigator.clipboard.writeText('{txt}').then(()=>{{
+                  this.innerHTML='✓ Copié';this.style.background='#E8F5EE';this.style.color='#005C2A';
+                  setTimeout(()=>{{this.innerHTML='📋 {lbl}';this.style.background='';this.style.color=''}},2000)}})">
+                  📋 {lbl}</button>
+                <style>#{bid}{{background:#F2F4F7;color:#4A5568;border:1px solid #E0E4EA;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Barlow,sans-serif;transition:all .15s}}</style>
+                """,height=40)
+        if jf is not None and "J_TOT" in udf.columns: copy_btn(cb1,udf,"J_TOT","Copier Jorf","j")
+        if sf is not None and "S_TOT" in udf.columns: copy_btn(cb2,udf,"S_TOT","Copier Safi","s")
+        if "TOTAL" in udf.columns: copy_btn(cb3,udf,"TOTAL","Copier Total","t")
 
-        if jorf_f is not None and "J_TOTAL" in unified_df.columns:
-            copy_btn(cb1, unified_df, "J_TOTAL", "Copier Jorf", "jorf")
-        if safi_f is not None and "S_TOTAL" in unified_df.columns:
-            copy_btn(cb2, unified_df, "S_TOTAL", "Copier Safi", "safi")
-        if "TOTAL" in unified_df.columns:
-            copy_btn(cb3, unified_df, "TOTAL", "Copier Total", "total")
-
-        # Charts
-        st.markdown("<div style='margin-top:8px'></div>",unsafe_allow_html=True)
-        g1,g2 = st.columns(2)
-
+        # Graphiques
+        st.markdown("<div style='margin-top:6px'></div>", unsafe_allow_html=True)
+        g1,g2=st.columns(2)
         with g1:
-            st.markdown('<div class="section-title purple">Rade Jorf — Engrais en attente</div>', unsafe_allow_html=True)
-            if rade_f is not None and "RADE_J" in unified_df.columns:
-                rc=unified_df[unified_df["RADE_J"]>0].copy()
+            st.markdown('<div class="stitle purple">Rade Jorf — Engrais en attente</div>', unsafe_allow_html=True)
+            if rf is not None and "RADE" in udf.columns:
+                rc=udf[udf["RADE"]>0].copy()
                 if len(rc)>0:
                     fig=go.Figure()
-                    fig.add_trace(go.Bar(x=rc["Date"],y=rc["RADE_J"],name="Rade Jorf",
-                        marker=dict(color="#8B5CF6",opacity=0.85),
-                        hovertemplate='<b>%{x}</b><br>Rade : %{y:.1f} KT<extra></extra>'))
-                    fig.update_layout(**PLOT_LAYOUT,title=dict(text="Rade Jorf (KT)",font=dict(size=13,color="#5A6A7A")))
+                    fig.add_trace(go.Bar(x=rc["Date"],y=rc["RADE"],name="Rade",
+                        marker=dict(color="#6B3FA0",opacity=.85),
+                        hovertemplate='<b>%{x}</b><br>%{y:.1f} KT<extra></extra>'))
+                    fig.update_layout(**PL,title=dict(text="Rade Jorf (KT)",font=dict(size=13,color="#4A5568")))
                     st.plotly_chart(fig,use_container_width=True)
-                else: st.info("Pas de données Rade disponibles.")
-            else: st.info("Chargez le fichier Jorf pour voir la Rade.")
-
+                else: st.info("Pas de données Rade.")
+            else: st.info("Chargez le fichier Jorf.")
         with g2:
-            st.markdown('<div class="section-title">Production journalière — Jorf vs Safi</div>', unsafe_allow_html=True)
-            djs=[c for c in ["J_TOTAL","S_TOTAL"] if c in unified_df.columns]
-            names_={"J_TOTAL":"Jorf","S_TOTAL":"Safi"}
-            if djs and len(unified_df)>1:
+            st.markdown('<div class="stitle">Jorf vs Safi — production journalière</div>', unsafe_allow_html=True)
+            djs=[c for c in ["J_TOT","S_TOT"] if c in udf.columns]
+            nm2={"J_TOT":"Jorf","S_TOT":"Safi"}
+            if djs and len(udf)>1:
                 fig=go.Figure()
                 for c in djs:
-                    clr = "#00843D" if c=="J_TOTAL" else "#1565C0"
-                    fill_clr = "rgba(0,132,61,0.07)" if c=="J_TOTAL" else "rgba(21,101,192,0.07)"
-                    fig.add_trace(go.Scatter(x=unified_df["Date"],y=unified_df[c],mode='lines',
-                        name=names_[c],line=dict(color=clr,width=2),fill='tozeroy',
-                        fillcolor=fill_clr,
-                        hovertemplate=f'<b>%{{x}}</b><br>{names_[c]}: %{{y:.1f}} KT<extra></extra>'))
-                fig.update_layout(**PLOT_LAYOUT,title=dict(text="Total Jorf & Safi (KT/jour)",font=dict(size=13,color="#5A6A7A")))
+                    clr="#00843D" if c=="J_TOT" else "#1565C0"
+                    fc="rgba(0,132,61,0.07)" if c=="J_TOT" else "rgba(21,101,192,0.07)"
+                    fig.add_trace(go.Scatter(x=udf["Date"],y=udf[c],mode='lines',name=nm2[c],
+                        line=dict(color=clr,width=2),fill='tozeroy',fillcolor=fc,
+                        hovertemplate=f'<b>%{{x}}</b><br>{nm2[c]}: %{{y:.1f}} KT<extra></extra>'))
+                fig.update_layout(**PL,title=dict(text="Total Jorf & Safi (KT/jour)",font=dict(size=13,color="#4A5568")))
                 st.plotly_chart(fig,use_container_width=True)
             else: st.info("Chargez les fichiers pour voir les graphiques.")
     else:
-        st.info("Chargez au moins un fichier Excel depuis la barre latérale pour commencer.")
+        st.info("Chargez au moins un fichier Excel ci-dessus pour afficher les données.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE: SIMULATION DE STOCK
+# PAGE : SIMULATION STOCK
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "stock":
+elif page=="stock":
 
-    def simulation_stock(si, cj, navires, retards, conso_reelle=None):
+    def sim_stock(si,cj,navires,retards,cr=None):
         navires=sorted(navires,key=lambda x:x[0])
-        today=pd.Timestamp.today()
-        debut=pd.Timestamp(today.year,today.month,1)
+        t=pd.Timestamp.today(); debut=pd.Timestamp(t.year,t.month,1)
         cal=pd.date_range(start=debut,end=debut+pd.DateOffset(days=60),freq='D')
-        stock=si; sv=[]; dates=[]; nav_arr=[]; nav_qty=[]
-        for jour in cal:
+        stock=si; sv=[]; dates=[]; na=[]; nq=[]
+        for j in cal:
             for (dp,qty) in navires:
                 de=dp+pd.Timedelta(days=retards.get(dp,0))
-                if jour==de: stock+=qty; nav_arr.append(jour); nav_qty.append(qty)
-            conso=conso_reelle.get(jour.date(),cj) if conso_reelle else cj
-            stock-=conso; sv.append(stock); dates.append(jour)
-        return dates,sv,nav_arr,nav_qty
+                if j==de: stock+=qty; na.append(j); nq.append(qty)
+            c=cr.get(j.date(),cj) if cr else cj
+            stock-=c; sv.append(stock); dates.append(j)
+        return dates,sv,na,nq
 
-    def afficher_sim(dates,sv,nav_arr,nav_qty,titre,seuil=36000):
+    def show_sim(dates,sv,na,nq,titre,seuil=36000):
         fig=go.Figure()
-        # Critical zone
-        fig.add_hrect(y0=0,y1=seuil,fillcolor="rgba(232,72,90,0.06)",line_width=0)
-        # Stock line
-        colors=['#00C46A' if v>=seuil else '#E8485A' for v in sv]
+        fig.add_hrect(y0=0,y1=seuil,fillcolor="rgba(198,40,40,0.05)",line_width=0)
         fig.add_trace(go.Scatter(x=dates,y=sv,mode='lines',name='Stock',
-            line=dict(color='#00843D',width=2.5),fill='tozeroy',
-            fillcolor='rgba(0,132,61,0.07)',
+            line=dict(color='#00843D',width=2.5),fill='tozeroy',fillcolor='rgba(0,132,61,0.07)',
             hovertemplate='<b>%{x|%d/%m/%Y}</b><br>Stock : %{y:,.0f} T<extra></extra>'))
         fig.add_trace(go.Scatter(x=dates,y=[seuil]*len(dates),mode='lines',
             name=f'Seuil ({seuil:,} T)',line=dict(dash='dash',color='#C62828',width=1.5)))
-        for i,date in enumerate(nav_arr):
-            idx=dates.index(date)
-            fig.add_trace(go.Scatter(x=[date],y=[sv[idx]],mode='markers+text',
-                name=f'Navire {i+1}',
-                marker=dict(symbol='triangle-up',color='#1A9ED4',size=14,
-                           line=dict(color='white',width=1.5)),
-                text=[f"+{nav_qty[i]:,} T"],textposition='top center',
-                textfont=dict(size=11,color='#1A9ED4'),showlegend=True))
-        layout=dict(**PLOT_LAYOUT)
-        layout['height']=400
-        layout['title']=dict(text=titre,font=dict(size=15,color='#1A2332'))
-        fig.update_layout(**layout)
-        st.plotly_chart(fig,use_container_width=True)
-        # Stats
+        for i,d in enumerate(na):
+            idx=dates.index(d)
+            fig.add_trace(go.Scatter(x=[d],y=[sv[idx]],mode='markers+text',name=f'Navire {i+1}',
+                marker=dict(symbol='triangle-up',color='#1565C0',size=13,line=dict(color='white',width=1.5)),
+                text=[f"+{nq[i]:,} T"],textposition='top center',textfont=dict(size=11,color='#1565C0'),showlegend=True))
+        lyt=dict(**PL); lyt['height']=400; lyt['title']=dict(text=titre,font=dict(size=14,color='#12202E'))
+        fig.update_layout(**lyt); st.plotly_chart(fig,use_container_width=True)
         m1,m2,m3=st.columns(3)
-        mn_v=min(sv); mn_d=dates[sv.index(mn_v)]
-        jc=sum(1 for v in sv if v<seuil)
-        m1.metric("Stock minimum",f"{mn_v:,.0f} T",f"le {mn_d.strftime('%d/%m/%Y')}")
+        mn=min(sv); mn_d=dates[sv.index(mn)]; jc=sum(1 for v in sv if v<seuil)
+        m1.metric("Stock minimum",f"{mn:,.0f} T",f"le {mn_d.strftime('%d/%m/%Y')}")
         m2.metric("Stock final",f"{sv[-1]:,.0f} T")
-        m3.metric(f"Jours critiques (<{seuil//1000}k T)",f"{jc} j",delta=f"{'⚠️' if jc>0 else '✅'}")
+        m3.metric(f"Jours critiques",f"{jc} j",delta="⚠️ Risque" if jc>0 else "✅ OK")
 
-    tab_safi,tab_jorf = st.tabs(["🌊  Site de Safi","⚓  Site de Jorf"])
+    tab_sa,tab_jo=st.tabs(["🌊  Site de Safi","⚓  Site de Jorf"])
 
-    # ── SAFI ──
-    with tab_safi:
-        mat_s=st.selectbox("Matière première (Safi)",["Soufre"],key="sim_safi_mat")
-        ps=f"ss_{mat_s.lower()}"
+    with tab_sa:
+        ms=st.selectbox("Matière première",["Soufre"],key="ss_mat")
+        ps=f"ss_{ms.lower()}"
         c1,c2=st.columns(2)
         with c1: si_s=st.number_input("Stock initial (T)",key=f"{ps}_si",min_value=0,value=40000,step=1000)
-        with c2: cj_s=st.number_input("Consommation journalière (T)",key=f"{ps}_cj",min_value=0,value=3600,step=100)
-        ucr_s=st.checkbox("Utiliser des consommations journalières réelles ?",key=f"{ps}_ucr")
-        cr_s={}
-        if ucr_s:
-            st.markdown('<div class="section-title">Consommation réelle par jour</div>',unsafe_allow_html=True)
-            dm=pd.Timestamp.today().replace(day=1)
-            jours=pd.date_range(dm,dm+pd.offsets.MonthEnd(1),freq='D')
-            cols4=st.columns(4)
+        with c2: cj_s=st.number_input("Conso journalière (T)",key=f"{ps}_cj",min_value=0,value=3600,step=100)
+        ucr=st.checkbox("Consommations réelles par jour ?",key=f"{ps}_ucr")
+        cr={}
+        if ucr:
+            dm=pd.Timestamp.today().replace(day=1); jours=pd.date_range(dm,dm+pd.offsets.MonthEnd(1),freq='D')
+            cols=st.columns(4)
             for i,j in enumerate(jours):
-                with cols4[i%4]:
-                    cr_s[j.date()]=st.number_input(j.strftime('%d/%m'),min_value=0,value=int(cj_s),step=100,key=f"{ps}_cr_{j.strftime('%Y%m%d')}")
-        st.markdown('<div class="section-title blue">Navires prévus</div>',unsafe_allow_html=True)
-        nav_s,ret_s=[],{}
-        nn=st.number_input("Nombre de navires",key=f"{ps}_n",min_value=0,value=3)
+                with cols[i%4]: cr[j.date()]=st.number_input(j.strftime('%d/%m'),min_value=0,value=int(cj_s),step=100,key=f"{ps}_cr{j.strftime('%Y%m%d')}")
+        st.markdown('<div class="stitle blue">Navires prévus</div>', unsafe_allow_html=True)
+        nav,ret=[],{}; nn=st.number_input("Nombre de navires",key=f"{ps}_n",min_value=0,value=3)
         for i in range(int(nn)):
-            cd,cq,cr=st.columns(3)
+            cd,cq,cr2=st.columns(3)
             with cd: da=st.date_input(f"Date navire {i+1}",pd.Timestamp.today(),key=f"{ps}_d{i}")
             with cq: qty=st.number_input(f"Quantité {i+1} (T)",0,500000,30000,1000,key=f"{ps}_q{i}")
-            with cr: ret=st.number_input(f"Retard (j) {i+1}",0,30,0,1,key=f"{ps}_r{i}")
-            nav_s.append((pd.Timestamp(da),qty))
-            if ret>0: ret_s[pd.Timestamp(da)]=ret
-        if st.button(f"🚀 Lancer la simulation — Safi ({mat_s})",key=f"{ps}_btn",type="primary"):
-            d,sv,na,nq=simulation_stock(si_s,cj_s,nav_s,ret_s,cr_s if ucr_s else None)
-            afficher_sim(d,sv,na,nq,f"Évolution du stock — Safi / {mat_s}")
+            with cr2: r=st.number_input(f"Retard (j) {i+1}",0,30,0,1,key=f"{ps}_r{i}")
+            nav.append((pd.Timestamp(da),qty))
+            if r>0: ret[pd.Timestamp(da)]=r
+        if st.button(f"🚀 Simuler — Safi / {ms}",key=f"{ps}_btn",type="primary"):
+            d,sv,na,nq=sim_stock(si_s,cj_s,nav,ret,cr if ucr else None)
+            show_sim(d,sv,na,nq,f"Stock — Safi / {ms}")
 
-    # ── JORF ──
-    with tab_jorf:
-        mat_j=st.selectbox("Matière première",["Soufre","NH3","KCL","ACS"],key="sim_jorf_mat")
-        pj=f"sj_{mat_j.lower()}"
-
-        if mat_j=="ACS":
-            st.markdown('<div class="section-title">Paramètres généraux ACS</div>',unsafe_allow_html=True)
+    with tab_jo:
+        mj=st.selectbox("Matière première",["Soufre","NH3","KCL","ACS"],key="sj_mat")
+        pj=f"sj_{mj.lower()}"
+        if mj=="ACS":
+            st.markdown('<div class="stitle">Paramètres ACS</div>', unsafe_allow_html=True)
             c1,c2,c3,c4=st.columns(4)
-            with c1: ce_acs=st.number_input("Conso engrais (T)",key=f"{pj}_ce",min_value=0,value=12000)
-            with c2: si_acs=st.number_input("Stock initial (T)",key=f"{pj}_si",min_value=0,value=300000)
-            with c3: rade_v=st.number_input("Rade (T)",key=f"{pj}_rade",min_value=0,value=60000)
-            with c4: dech=st.number_input("Déchargement (T)",key=f"{pj}_dech",min_value=0,value=300000)
-
-            dm=pd.Timestamp.today().replace(day=1)
-            cal_acs=pd.date_range(start=dm,end=dm+pd.DateOffset(days=60),freq='D')
-            prod_jj={d.normalize():0 for d in cal_acs}
-
-            def render_lignes(lignes, prefix, default_cad):
-                prod_tot=0
-                for i,ligne in enumerate(st.tabs([f"{l}" for l in lignes])):
-                    with ligne:
-                        la=lignes[i]
-                        jal=st.text_input(f"Jours d'arrêt (ex: 1-3,15)",key=f"{prefix}_{la}_ar")
+            with c1: ce=st.number_input("Conso engrais (T)",key=f"{pj}_ce",min_value=0,value=12000)
+            with c2: si_a=st.number_input("Stock initial (T)",key=f"{pj}_si",min_value=0,value=300000)
+            with c3: rv2=st.number_input("Rade (T)",key=f"{pj}_rv",min_value=0,value=60000)
+            with c4: dc=st.number_input("Déchargement (T)",key=f"{pj}_dc",min_value=0,value=300000)
+            dm=pd.Timestamp.today().replace(day=1); cal=pd.date_range(start=dm,end=dm+pd.DateOffset(days=60),freq='D')
+            pjj={d.normalize():0 for d in cal}
+            def rl(lignes,pfx,cad_def):
+                tot=0
+                for i,t in enumerate(st.tabs([f"{l}" for l in lignes])):
+                    with t:
+                        la=lignes[i]; jar_str=st.text_input(f"Arrêts (ex: 1-3,15)",key=f"{pfx}_{la}_a")
                         jar=[]
-                        if jal:
-                            for part in jal.split(","):
-                                part=part.strip()
-                                if "-" in part:
-                                    a_,b_=part.split("-"); jar.extend(range(int(a_),int(b_)+1))
-                                else: jar.append(int(part))
+                        if jar_str:
+                            for pt in jar_str.split(","):
+                                pt=pt.strip()
+                                if "-" in pt:
+                                    a_,b_=pt.split("-"); jar.extend(range(int(a_),int(b_)+1))
+                                else: jar.append(int(pt))
                             jar=sorted(set(jar))
-                        nb=st.number_input(f"Périodes",min_value=1,value=1,key=f"{prefix}_{la}_nb")
-                        plt=0
-                        for p in range(int(nb)):
+                        nb=st.number_input("Périodes",min_value=1,value=1,key=f"{pfx}_{la}_nb"); pl=0
+                        for p2 in range(int(nb)):
                             ca,cb,cc=st.columns(3)
-                            with ca: dd=st.date_input(f"Début {p+1}",dm,key=f"{prefix}_{la}_dd{p}")
-                            with cb: df__=st.date_input(f"Fin {p+1}",dm+pd.Timedelta(days=5),key=f"{prefix}_{la}_df{p}")
-                            with cc: cad=st.number_input(f"Cadence T/j",min_value=0,value=default_cad,key=f"{prefix}_{la}_cad{p}")
-                            for d in pd.date_range(pd.Timestamp(dd),pd.Timestamp(df__),freq='D'):
-                                if d.day not in jar:
-                                    prod_jj[d.normalize()]=prod_jj.get(d.normalize(),0)+cad; plt+=cad
-                        prod_tot+=plt
-                        st.info(f"Total **{la}** : {plt:,.0f} T")
-                return prod_tot
-
-            st.markdown('<div class="section-title">Lignes ACS</div>',unsafe_allow_html=True)
-            lignes_acs=["01A","01B","01C","01X","01Y","01Z","101D","101E","101U","JFC1","JFC2","JFC3","JFC4","JFC5","IMACID","PMP"]
-            prod_acs_tot=render_lignes(lignes_acs,f"{pj}_acs",2600)
-
-            st.markdown('<div class="section-title blue">Lignes ACP29</div>',unsafe_allow_html=True)
-            lignes_acp29=["JFC1_ACP29","JFC2_ACP29","JFC3_ACP29","JFC4_ACP29","JFC5_ACP29","JLN_03AB","JLN_03CD","JLN_03XY","JLN_03ZU","JLN_03E","JLN_03F","PMP_ACP29","IMACID_ACP29"]
-            prod_acp29_tot=render_lignes(lignes_acp29,f"{pj}_acp",1000)
-
-            st.markdown('<div class="section-title orange">Résultats</div>',unsafe_allow_html=True)
-            c29=3.14*prod_acp29_tot
-            sf=si_acs+dech+rade_v+prod_acs_tot-c29-ce_acs
+                            with ca: dd=st.date_input(f"Début {p2+1}",dm,key=f"{pfx}_{la}_dd{p2}")
+                            with cb: df2=st.date_input(f"Fin {p2+1}",dm+pd.Timedelta(days=5),key=f"{pfx}_{la}_df{p2}")
+                            with cc: cad=st.number_input(f"Cadence T/j",min_value=0,value=cad_def,key=f"{pfx}_{la}_cd{p2}")
+                            for d in pd.date_range(pd.Timestamp(dd),pd.Timestamp(df2),freq='D'):
+                                if d.day not in jar: pjj[d.normalize()]=pjj.get(d.normalize(),0)+cad; pl+=cad
+                        tot+=pl; st.info(f"**{la}** : {pl:,.0f} T")
+                return tot
+            st.markdown('<div class="stitle">Lignes ACS</div>', unsafe_allow_html=True)
+            la_acs=["01A","01B","01C","01X","01Y","01Z","101D","101E","101U","JFC1","JFC2","JFC3","JFC4","JFC5","IMACID","PMP"]
+            pa=rl(la_acs,f"{pj}_a",2600)
+            st.markdown('<div class="stitle blue">Lignes ACP29</div>', unsafe_allow_html=True)
+            la_acp=["JFC1_ACP29","JFC2_ACP29","JFC3_ACP29","JFC4_ACP29","JFC5_ACP29","JLN_03AB","JLN_03CD","JLN_03XY","JLN_03ZU","JLN_03E","JLN_03F","PMP_ACP29","IMACID_ACP29"]
+            pp=rl(la_acp,f"{pj}_p",1000)
+            st.markdown('<div class="stitle orange">Résultats</div>', unsafe_allow_html=True)
+            c29=3.14*pp; sf2=si_a+dc+rv2+pa-c29-ce
             r1,r2,r3,r4=st.columns(4)
-            r1.metric("Production ACS",f"{prod_acs_tot:,.0f} T")
-            r2.metric("Production ACP29",f"{prod_acp29_tot:,.0f} T")
-            r3.metric("Conso ACP29 (×3.14)",f"{c29:,.0f} T")
-            r4.metric("Stock final estimé",f"{sf:,.0f} T",delta="positif ✅" if sf>0 else "déficit ❌")
-
-            nb_j=len(cal_acs)
-            pj__=prod_acs_tot/nb_j if nb_j>0 else 0
-            cj__=(c29+ce_acs)/nb_j if nb_j>0 else 0
-            stk=si_acs; svacs=[]
-            for i_d,d in enumerate(cal_acs):
-                if i_d==0: stk+=rade_v+dech
-                stk+=pj__; stk-=cj__; svacs.append(stk)
+            r1.metric("Production ACS",f"{pa:,.0f} T"); r2.metric("Production ACP29",f"{pp:,.0f} T")
+            r3.metric("Conso ACP29 (×3.14)",f"{c29:,.0f} T"); r4.metric("Stock final",f"{sf2:,.0f} T",delta="✅ OK" if sf2>0 else "❌ Déficit")
+            nb2=len(cal); pjr=pa/nb2 if nb2>0 else 0; cjr=(c29+ce)/nb2 if nb2>0 else 0
+            stk2=si_a; svacs=[]
+            for i_d,d in enumerate(cal):
+                if i_d==0: stk2+=rv2+dc
+                stk2+=pjr; stk2-=cjr; svacs.append(stk2)
             fig=go.Figure()
-            fig.add_trace(go.Scatter(x=cal_acs,y=svacs,mode='lines',name='Stock ACS',
-                line=dict(color='#00843D',width=2.5),fill='tozeroy',fillcolor='rgba(0,132,61,0.07)'))
-            fig.add_trace(go.Scatter(x=cal_acs,y=[0]*len(cal_acs),mode='lines',name='Zéro stock',
-                line=dict(dash='dash',color='#C62828',width=1.5)))
-            lyt=dict(**PLOT_LAYOUT); lyt['height']=380
-            lyt['title']=dict(text="Évolution du stock ACS (simulation linéaire)",font=dict(size=14,color='#1A2332'))
-            fig.update_layout(**lyt)
-            st.plotly_chart(fig,use_container_width=True)
-
+            fig.add_trace(go.Scatter(x=cal,y=svacs,mode='lines',name='Stock ACS',line=dict(color='#00843D',width=2.5),fill='tozeroy',fillcolor='rgba(0,132,61,0.07)'))
+            fig.add_trace(go.Scatter(x=cal,y=[0]*len(cal),mode='lines',name='Zéro',line=dict(dash='dash',color='#C62828',width=1.5)))
+            lyt2=dict(**PL); lyt2['height']=380; lyt2['title']=dict(text="Évolution stock ACS",font=dict(size=13,color='#12202E'))
+            fig.update_layout(**lyt2); st.plotly_chart(fig,use_container_width=True)
         else:
-            SEUILS={"Soufre":36000,"NH3":5000,"KCL":10000}
-            seuil=SEUILS.get(mat_j,36000)
+            SEUILS={"Soufre":36000,"NH3":5000,"KCL":10000}; seuil=SEUILS.get(mj,36000)
             c1,c2=st.columns(2)
             with c1: si_j=st.number_input("Stock initial (T)",key=f"{pj}_si",min_value=0,value=100000,step=1000)
-            with c2: cj_j=st.number_input("Consommation journalière (T)",key=f"{pj}_cj",min_value=0,value=17500,step=100)
-            ucr_j=st.checkbox("Consommations journalières réelles ?",key=f"{pj}_ucr")
-            cr_j={}
-            if ucr_j:
-                st.markdown('<div class="section-title">Consommation réelle par jour</div>',unsafe_allow_html=True)
-                dm=pd.Timestamp.today().replace(day=1)
-                jours=pd.date_range(dm,dm+pd.offsets.MonthEnd(1),freq='D')
-                cols4=st.columns(4)
+            with c2: cj_j=st.number_input("Conso journalière (T)",key=f"{pj}_cj",min_value=0,value=17500,step=100)
+            ucr2=st.checkbox("Consommations réelles ?",key=f"{pj}_ucr"); cr2={}
+            if ucr2:
+                dm=pd.Timestamp.today().replace(day=1); jours=pd.date_range(dm,dm+pd.offsets.MonthEnd(1),freq='D')
+                cols=st.columns(4)
                 for i,j in enumerate(jours):
-                    with cols4[i%4]:
-                        cr_j[j.date()]=st.number_input(j.strftime('%d/%m'),min_value=0,value=int(cj_j),step=100,key=f"{pj}_cr_{j.strftime('%Y%m%d')}")
-            st.markdown('<div class="section-title blue">Navires prévus</div>',unsafe_allow_html=True)
-            nav_j,ret_j=[],{}
-            nn_j=st.number_input(f"Nombre de navires ({mat_j})",key=f"{pj}_n",min_value=0,value=3)
-            for i in range(int(nn_j)):
-                cd,cq,cr=st.columns(3)
-                with cd: da=st.date_input(f"Date navire {i+1}",pd.Timestamp.today(),key=f"{pj}_d{i}")
-                with cq: qty=st.number_input(f"Quantité {i+1} (T)",0,500000,30000,1000,key=f"{pj}_q{i}")
-                with cr: ret=st.number_input(f"Retard (j) {i+1}",0,30,0,1,key=f"{pj}_r{i}")
-                nav_j.append((pd.Timestamp(da),qty))
-                if ret>0: ret_j[pd.Timestamp(da)]=ret
-            if st.button(f"🚀 Lancer la simulation — Jorf / {mat_j}",key=f"{pj}_btn",type="primary"):
-                d,sv,na,nq=simulation_stock(si_j,cj_j,nav_j,ret_j,cr_j if ucr_j else None)
-                afficher_sim(d,sv,na,nq,f"Évolution du stock — Jorf / {mat_j}",seuil=seuil)
+                    with cols[i%4]: cr2[j.date()]=st.number_input(j.strftime('%d/%m'),min_value=0,value=int(cj_j),step=100,key=f"{pj}_cr{j.strftime('%Y%m%d')}")
+            st.markdown('<div class="stitle blue">Navires prévus</div>', unsafe_allow_html=True)
+            nav2,ret2=[],{}; nn2=st.number_input(f"Navires ({mj})",key=f"{pj}_n",min_value=0,value=3)
+            for i in range(int(nn2)):
+                cd,cq,cr3=st.columns(3)
+                with cd: da=st.date_input(f"Date {i+1}",pd.Timestamp.today(),key=f"{pj}_d{i}")
+                with cq: qty=st.number_input(f"Qté {i+1} (T)",0,500000,30000,1000,key=f"{pj}_q{i}")
+                with cr3: r=st.number_input(f"Retard {i+1}j",0,30,0,1,key=f"{pj}_r{i}")
+                nav2.append((pd.Timestamp(da),qty))
+                if r>0: ret2[pd.Timestamp(da)]=r
+            if st.button(f"🚀 Simuler — Jorf / {mj}",key=f"{pj}_btn",type="primary"):
+                d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
+                show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE: PIPELINE DES VENTES (placeholder)
+# PAGES PLACEHOLDER
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "ventes":
-    st.markdown("""
-    <div class="placeholder-card">
-      <div class="emoji">📊</div>
-      <h2>Pipeline des Ventes</h2>
-      <p>Ce module est en cours de développement.<br/>
-      Il permettra de suivre les opportunités commerciales, les performances par produit et par marché.</p>
-      <div class="badge-soon-green">PROCHAINEMENT</div>
-    </div>
-    """, unsafe_allow_html=True)
+elif page=="ventes":
+    st.markdown("""<div class="ph-card"><div style="font-size:52px;margin-bottom:16px">📊</div>
+    <h2>Pipeline des Ventes</h2>
+    <p>Ce module permettra de suivre les opportunités commerciales, les performances par produit et par marché.</p>
+    <div class="ph-badge-g">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: EXPORT NAVIRE (placeholder)
-# ══════════════════════════════════════════════════════════════════════════════
-elif page == "navires":
-    st.markdown("""
-    <div class="placeholder-card">
-      <div class="emoji">🚢</div>
-      <h2>Export Navire</h2>
-      <p>Ce module est en cours de développement.<br/>
-      Il permettra de planifier et suivre les chargements navires, les escales, et les volumes exportés.</p>
-      <div class="badge-soon-blue">PROCHAINEMENT</div>
-    </div>
-    """, unsafe_allow_html=True)
+elif page=="navires":
+    st.markdown("""<div class="ph-card"><div style="font-size:52px;margin-bottom:16px">🚢</div>
+    <h2>Export Navire</h2>
+    <p>Ce module permettra de planifier et suivre les chargements navires, les escales et les volumes exportés.</p>
+    <div class="ph-badge-b">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
