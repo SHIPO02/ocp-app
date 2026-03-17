@@ -45,7 +45,7 @@ JORF_CACHE   = os.path.join(CACHE_DIR, "jorf.pkl")
 SAFI_CACHE   = os.path.join(CACHE_DIR, "safi.pkl")
 HIST_JORF    = os.path.join(CACHE_DIR, "hist_jorf.json")
 HIST_SAFI    = os.path.join(CACHE_DIR, "hist_safi.json")
-HIST_FILES   = os.path.join(CACHE_DIR, "hist_files")   # dossier des fichiers historiques
+HIST_FILES   = os.path.join(CACHE_DIR, "hist_files")
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(HIST_FILES, exist_ok=True)
 
@@ -66,8 +66,6 @@ def clear_cache(path):
     if os.path.exists(path):
         os.remove(path)
 
-# ─── HISTORIQUE ──────────────────────────────────────────────────────────────
-
 def load_historique(hist_path):
     if os.path.exists(hist_path):
         try:
@@ -82,37 +80,31 @@ def save_historique(hist_path, hist_list):
         json.dump(hist_list, f, ensure_ascii=False, indent=2)
 
 def add_to_historique(hist_path, filename, file_bytes, file_type):
-    """Ajoute un fichier à l'historique et sauvegarde ses bytes sur disque."""
     hist = load_historique(hist_path)
-    # Chemin physique du fichier historique
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = filename.replace(" ", "_")
     phys_path = os.path.join(HIST_FILES, f"{file_type}_{ts}_{safe_name}")
     with open(phys_path, "wb") as f:
         f.write(file_bytes)
-    # Entrée dans l'historique
     entry = {
         "filename": filename,
         "date_upload": datetime.now().strftime("%d/%m/%Y %H:%M"),
         "path": phys_path,
         "type": file_type,
     }
-    # Eviter les doublons (même nom chargé le même jour)
     hist = [h for h in hist if not (h["filename"] == filename and h["date_upload"][:10] == entry["date_upload"][:10])]
-    hist.insert(0, entry)   # plus récent en premier
-    hist = hist[:20]         # garder max 20 entrées
+    hist.insert(0, entry)
+    hist = hist[:20]
     save_historique(hist_path, hist)
     return phys_path
 
 def load_from_hist_entry(entry):
-    """Charge les bytes d'un fichier depuis l'historique."""
     path = entry.get("path", "")
     if os.path.exists(path):
         with open(path, "rb") as f:
             return f.read()
     return None
 
-# ─── DICTIONNAIRE MOIS ────────────────────────────────────────────────────────
 NOMS_MOIS = {1:"Jan",2:"Fev",3:"Mar",4:"Avr",5:"Mai",6:"Jun",
              7:"Jul",8:"Aou",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
 ORDRE_MOIS = {v:k for k,v in NOMS_MOIS.items()}
@@ -216,8 +208,6 @@ def get_derniere_valeur(df, col_valeur, col_date="Date"):
     last = tmp.iloc[-1]
     return round(float(last[col_valeur]), 1), last[col_date]
 
-# ─── PARSE FUNCTIONS ─────────────────────────────────────────────────────────
-
 def parse_jorf(raw_bytes, engine):
     df_raw = pd.read_excel(io.BytesIO(raw_bytes), sheet_name='EXPORT', header=None, engine=engine)
     coords = {"ENGRAIS": None, "CAMIONS": None, "VL": None}
@@ -310,10 +300,7 @@ def parse_safi(raw_bytes, engine):
                          "TOTAL Safi": round(tsp_exp + tsp_ml, 1)})
     return pd.DataFrame(rows) if rows else None
 
-# ─── FONCTION CHARGEMENT DEPUIS BYTES ────────────────────────────────────────
-
 def charger_jorf_depuis_bytes(raw_bytes, filename):
-    """Parse et sauvegarde un fichier Jorf depuis ses bytes bruts."""
     fake_file = io.BytesIO(raw_bytes)
     fake_file.name = filename
     raw, engine = read_file_bytes(fake_file)
@@ -330,7 +317,6 @@ def charger_jorf_depuis_bytes(raw_bytes, filename):
     return jorf_df_new
 
 def charger_safi_depuis_bytes(raw_bytes, filename):
-    """Parse et sauvegarde un fichier Safi depuis ses bytes bruts."""
     fake_file = io.BytesIO(raw_bytes)
     fake_file.name = filename
     raw, engine = read_file_bytes(fake_file)
@@ -357,7 +343,6 @@ st.divider()
 st.sidebar.header("Chargement des fichiers")
 EXCEL_TYPES = ["xlsx", "xls", "xlsm", "xlsb"]
 
-# Load cached data into session_state on first run
 if "jorf_loaded" not in st.session_state:
     cached = load_cache(JORF_CACHE)
     if cached:
@@ -373,7 +358,6 @@ if "safi_loaded" not in st.session_state:
         st.session_state["safi_name"] = cached.get("filename", "")
     st.session_state["safi_loaded"] = True
 
-# ── File uploaders ─────────────────────────────────────────────────────────
 file_jorf = st.sidebar.file_uploader("📂 Fichier Jorf", type=EXCEL_TYPES, key="jorf_uploader")
 file_safi = st.sidebar.file_uploader("📂 Fichier Safi", type=EXCEL_TYPES, key="safi_uploader")
 
@@ -386,7 +370,6 @@ if not file_jorf and jorf_name_saved:
 if not file_safi and safi_name_saved:
     st.sidebar.success(f"✅ Safi actif : **{safi_name_saved}**")
 
-# ─── PARSE & SAVE JORF  (auto-remplace l'ancien) ─────────────────────────────
 if file_jorf:
     try:
         jorf_bytes, engine = read_file_bytes(file_jorf)
@@ -396,32 +379,25 @@ if file_jorf:
             rade_df_new = parse_rade(jorf_bytes, engine)
         except:
             pass
-        # ── Efface l'ancien cache automatiquement ──
         clear_cache(JORF_CACHE)
-        # ── Sauvegarde le nouveau ──
         st.session_state["jorf_df"]   = jorf_df_new
         st.session_state["rade_df"]   = rade_df_new
         st.session_state["jorf_name"] = file_jorf.name
         save_cache(JORF_CACHE, {"jorf_df": jorf_df_new, "rade_df": rade_df_new, "filename": file_jorf.name})
-        # ── Ajoute à l'historique ──
         file_jorf.seek(0)
         add_to_historique(HIST_JORF, file_jorf.name, file_jorf.read(), "jorf")
         st.sidebar.success(f"✅ Jorf chargé et sauvegardé !")
     except Exception as e:
         st.sidebar.error(f"Erreur Jorf : {e}")
 
-# ─── PARSE & SAVE SAFI  (auto-remplace l'ancien) ─────────────────────────────
 if file_safi:
     try:
         safi_bytes, engine = read_file_bytes(file_safi)
         safi_df_new = parse_safi(safi_bytes, engine)
-        # ── Efface l'ancien cache automatiquement ──
         clear_cache(SAFI_CACHE)
-        # ── Sauvegarde le nouveau ──
         st.session_state["safi_df"]   = safi_df_new
         st.session_state["safi_name"] = file_safi.name
         save_cache(SAFI_CACHE, {"safi_df": safi_df_new, "filename": file_safi.name})
-        # ── Ajoute à l'historique ──
         file_safi.seek(0)
         add_to_historique(HIST_SAFI, file_safi.name, file_safi.read(), "safi")
         if safi_df_new is None:
@@ -431,7 +407,6 @@ if file_safi:
     except Exception as e:
         st.sidebar.error(f"Erreur Safi : {e}")
 
-# ─── HISTORIQUE SIDEBAR ───────────────────────────────────────────────────────
 st.sidebar.divider()
 st.sidebar.markdown("### 🕓 Historique des fichiers")
 
@@ -442,7 +417,6 @@ if hist_jorf:
     with st.sidebar.expander(f"📋 Jorf ({len(hist_jorf)} fichier(s))", expanded=False):
         for i, entry in enumerate(hist_jorf):
             is_active = entry["filename"] == st.session_state.get("jorf_name", "")
-            label = f"{'🟢 ' if is_active else ''}**{entry['filename']}**\n_{entry['date_upload']}_"
             col_h1, col_h2 = st.columns([3, 1])
             with col_h1:
                 st.markdown(f"{'🟢 ' if is_active else '⬜ '}{entry['filename']}  \n`{entry['date_upload']}`")
