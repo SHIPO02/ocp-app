@@ -14,6 +14,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Force sidebar always open + proper width
+st.markdown("""
+<style>
+[data-testid="stSidebar"] { min-width: 240px !important; max-width: 240px !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+section[data-testid="stSidebarContent"] { overflow-y: auto; }
+</style>
+""", unsafe_allow_html=True)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # THEME & GLOBAL CSS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -722,9 +731,9 @@ with st.sidebar:
     dot_j = '<span class="status-dot ok"></span>' if jorf_name else '<span class="status-dot none"></span>'
     dot_s = '<span class="status-dot ok"></span>' if safi_name else '<span class="status-dot none"></span>'
     st.markdown(f"""
-    <div style="padding:8px 12px;font-size:11px;color:var(--text-muted)">
-      {dot_j} Jorf : <span style="color:{'#00C46A' if jorf_name else '#4A6580'}">{jorf_name or '—'}</span><br/>
-      {dot_s} Safi : <span style="color:{'#00C46A' if safi_name else '#4A6580'}">{safi_name or '—'}</span>
+    <div style="padding:8px 12px 4px 16px;font-size:11px;color:#5A6A7A">
+      {dot_j} Jorf : <span style="color:{'#00843D' if jorf_name else '#9AAABB'};font-weight:600">{jorf_name or '—'}</span><br/>
+      {dot_s} Safi : <span style="color:{'#00843D' if safi_name else '#9AAABB'};font-weight:600">{safi_name or '—'}</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -774,7 +783,7 @@ with st.sidebar:
                 c1,c2=st.columns([3,1])
                 with c1:
                     dot='🟢' if is_active else '⬜'
-                    st.markdown(f"<div style='font-size:11px'>{dot} {entry['filename']}<br/><span style='color:var(--text-dim);font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:11px;color:#1A2332'>{dot} {entry['filename']}<br/><span style='color:#9AAABB;font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
                 with c2:
                     if not is_active:
                         if st.button("↩️",key=f"rj_{i}"):
@@ -790,7 +799,7 @@ with st.sidebar:
                 c1,c2=st.columns([3,1])
                 with c1:
                     dot='🟢' if is_active else '⬜'
-                    st.markdown(f"<div style='font-size:11px'>{dot} {entry['filename']}<br/><span style='color:var(--text-dim);font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:11px;color:#1A2332'>{dot} {entry['filename']}<br/><span style='color:#9AAABB;font-size:10px'>{entry['date_upload']}</span></div>",unsafe_allow_html=True)
                 with c2:
                     if not is_active:
                         if st.button("↩️",key=f"rs_{i}"):
@@ -1042,6 +1051,7 @@ if page == "suivi":
             djs=[c for c in ["J_TOTAL","S_TOTAL"] if c in unified_df.columns]
             names_={"J_TOTAL":"Jorf","S_TOTAL":"Safi"}
             if djs and len(unified_df)>1:
+                fig=go.Figure()
                 for c in djs:
                     clr = "#00843D" if c=="J_TOTAL" else "#1565C0"
                     fill_clr = "rgba(0,132,61,0.07)" if c=="J_TOTAL" else "rgba(21,101,192,0.07)"
@@ -1049,7 +1059,7 @@ if page == "suivi":
                         name=names_[c],line=dict(color=clr,width=2),fill='tozeroy',
                         fillcolor=fill_clr,
                         hovertemplate=f'<b>%{{x}}</b><br>{names_[c]}: %{{y:.1f}} KT<extra></extra>'))
-                fig.update_layout(**PLOT_LAYOUT,title=dict(text="Total Jorf & Safi (KT/jour)",font=dict(size=13,color="#7A9BB5")))
+                fig.update_layout(**PLOT_LAYOUT,title=dict(text="Total Jorf & Safi (KT/jour)",font=dict(size=13,color="#5A6A7A")))
                 st.plotly_chart(fig,use_container_width=True)
             else: st.info("Chargez les fichiers pour voir les graphiques.")
     else:
