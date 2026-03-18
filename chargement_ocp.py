@@ -597,21 +597,20 @@ if page=="accueil":
     ct=round(cj+cs,1)
     today=datetime.now().strftime("%A %d %B %Y")
 
-    h1,h2=st.columns([2,1])
-    with h1:
-        st.markdown(f"""
-        <div class="hero">
-          <div class="hero-title">OCP Manufacturing Dashboard</div>
-          <div class="hero-sub">Suivi consolidé des chargements, simulation de stock et pilotage des opérations — Jorf Lasfar & Safi.</div>
-          <div class="hero-date">{today}</div>
-        </div>""", unsafe_allow_html=True)
-    with h2:
-        st.markdown(f"""
-        <div class="hero" style="height:100%;justify-content:center;display:flex;flex-direction:column;text-align:center">
-          <div class="hero-stat-val">{fmt(ct)}</div>
-          <div class="hero-stat-lbl">KT — Total Jorf + Safi</div>
-          <div style="margin-top:14px;opacity:.7;font-size:11px">Jorf : {fmt(cj)} KT &nbsp;·&nbsp; Safi : {fmt(cs)} KT</div>
-        </div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="display:flex;gap:16px;margin-bottom:20px;align-items:stretch">
+      <div class="hero" style="flex:2;margin-bottom:0">
+        <div class="hero-title">OCP Manufacturing Dashboard</div>
+        <div class="hero-sub">Suivi consolidé des chargements, simulation de stock et pilotage des opérations — Jorf Lasfar & Safi.</div>
+        <div class="hero-date">{today}</div>
+      </div>
+      <div class="hero" style="flex:1;margin-bottom:0;display:flex;flex-direction:column;justify-content:center;text-align:center">
+        <div class="hero-stat-val">{fmt(ct)}</div>
+        <div class="hero-stat-lbl">KT — Production Totale Cumulée — Jorf + Safi</div>
+        <div style="margin-top:14px;opacity:.75;font-size:11px;letter-spacing:.3px">Jorf Lasfar : {fmt(cj)} KT &nbsp;|&nbsp; Safi : {fmt(cs)} KT</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Modules disponibles
     st.markdown('<div class="stitle">Modules disponibles</div>', unsafe_allow_html=True)
