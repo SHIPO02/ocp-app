@@ -869,22 +869,61 @@ elif page=="suivi":
             if c in disp.columns: cfg[c]=st.column_config.NumberColumn(n,format="%.1f")
         st.dataframe(disp,use_container_width=True,hide_index=True,height=min(660,45+35*len(disp)),column_config=cfg)
 
-        # Boutons copier
-        cb1,cb2,cb3,_=st.columns([1,1,1,2])
-        def copy_btn(container,df,col,lbl,key):
-            vals=df[df["Date"]!="TOTAL GÉNÉRAL"][col].dropna().tolist()
-            txt="\t".join(str(round(v,1)) for v in vals); bid=f"cb_{key}"
+        # ── Boutons copier — CORRIGÉS ──
+        # 4 colonnes : Jorf | Safi | Total | Rade
+        cb1,cb2,cb3,cb4,_=st.columns([1,1,1,1,1])
+
+        def copy_btn(container, df, col, lbl, key):
+            """Bouton copier une colonne (lignes hors TOTAL GÉNÉRAL) dans le presse-papier."""
+            vals = df[df["Date"] != "TOTAL GÉNÉRAL"][col].dropna().tolist()
+            txt = "\t".join(str(round(float(v), 1)) for v in vals)
+            bid = f"cb_{key}"
             with container:
                 st.components.v1.html(f"""
                 <button id="{bid}" onclick="navigator.clipboard.writeText('{txt}').then(()=>{{
-                  this.innerHTML='Copié';this.style.background='#E8F5EE';this.style.color='#005C2A';
-                  setTimeout(()=>{{this.innerHTML='Copier {lbl}';this.style.background='';this.style.color=''}},2000)}})">
-                  Copier {lbl}</button>
-                <style>#{bid}{{background:#F2F4F7;color:#4A5568;border:1px solid #E0E4EA;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Barlow,sans-serif;transition:all .15s}}</style>
-                """,height=40)
-        if jf is not None and "J_TOT" in udf.columns: copy_btn(cb1,udf,"J_TOT","Copier Jorf","j")
-        if sf is not None and "S_TOT" in udf.columns: copy_btn(cb2,udf,"S_TOT","Copier Safi","s")
-        if "TOTAL" in udf.columns: copy_btn(cb3,udf,"TOTAL","Copier Total","t")
+                  this.innerHTML='✓ Copié !';
+                  this.style.background='#E8F5EE';
+                  this.style.color='#005C2A';
+                  this.style.borderColor='rgba(0,132,61,.3)';
+                  setTimeout(()=>{{
+                    this.innerHTML='{lbl}';
+                    this.style.background='';
+                    this.style.color='';
+                    this.style.borderColor='';
+                  }},2000)
+                }})">
+                  {lbl}
+                </button>
+                <style>
+                  #{bid}{{
+                    background:#F2F4F7;
+                    color:#4A5568;
+                    border:1px solid #E0E4EA;
+                    padding:6px 14px;
+                    border-radius:6px;
+                    cursor:pointer;
+                    font-size:12px;
+                    font-weight:600;
+                    font-family:Barlow,sans-serif;
+                    transition:all .15s;
+                    width:100%;
+                  }}
+                  #{bid}:hover{{
+                    background:#E8F5EE;
+                    color:#005C2A;
+                    border-color:rgba(0,132,61,.3);
+                  }}
+                </style>
+                """, height=40)
+
+        if jf is not None and "J_TOT" in udf.columns:
+            copy_btn(cb1, udf, "J_TOT", "Copier Jorf", "j")
+        if sf is not None and "S_TOT" in udf.columns:
+            copy_btn(cb2, udf, "S_TOT", "Copier Safi", "s")
+        if "TOTAL" in udf.columns:
+            copy_btn(cb3, udf, "TOTAL", "Copier Total", "t")
+        if rf is not None and "RADE" in udf.columns:
+            copy_btn(cb4, udf, "RADE", "Copier Rade", "r")
 
         # Graphiques
         st.markdown("<div style='margin-top:6px'></div>", unsafe_allow_html=True)
