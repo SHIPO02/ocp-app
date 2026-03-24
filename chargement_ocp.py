@@ -109,7 +109,7 @@ button[data-testid="baseButton-headerNoPadding"] { display:none !important; }
   background:var(--white); border:1px solid var(--border); border-radius:10px;
   padding:18px 20px; box-shadow:var(--sh1);
   transition:transform .18s,box-shadow .18s; position:relative; overflow:hidden;
-  height:148px; box-sizing:border-box;
+  box-sizing:border-box;
   display:flex; flex-direction:column; justify-content:space-between;
 }
 .kcard:hover { transform:translateY(-2px); box-shadow:var(--sh2); }
@@ -125,6 +125,17 @@ button[data-testid="baseButton-headerNoPadding"] { display:none !important; }
 .kc-unit  { font-size:13px; font-weight:500; color:var(--text3); margin-left:2px; }
 .kc-sub   { font-size:11px; color:var(--text2); }
 .kc-extra { font-size:10px; color:var(--text3); margin-top:2px; }
+
+/* ─── KPI DETAIL ROWS (sous la valeur principale) ─── */
+.kc-detail {
+  margin-top:8px; padding-top:8px; border-top:1px solid var(--border2);
+  display:flex; flex-direction:column; gap:3px;
+}
+.kc-detail-row {
+  display:flex; justify-content:space-between; align-items:center;
+}
+.kc-detail-label { font-size:10px; color:var(--text3); }
+.kc-detail-value { font-size:10px; font-weight:700; color:var(--text2); }
 
 /* ─── SECTION TITLE ─── */
 .stitle {
@@ -146,6 +157,58 @@ button[data-testid="baseButton-headerNoPadding"] { display:none !important; }
   font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700;
   text-transform:uppercase; letter-spacing:.5px; color:var(--text2);
   margin-bottom:14px; display:flex; align-items:center; gap:6px;
+}
+
+/* ─── DECADE CARDS ─── */
+.decade-wrap {
+  background:var(--white); border:1px solid var(--border); border-radius:10px;
+  padding:18px 20px; box-shadow:var(--sh1); height:100%; box-sizing:border-box;
+}
+.decade-header {
+  display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;
+}
+.decade-title {
+  font-family:'Barlow Condensed',sans-serif; font-size:15px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.5px; color:var(--text);
+}
+.decade-badge {
+  font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+  padding:2px 8px; border-radius:10px;
+}
+.decade-badge.current { background:var(--green-lt); color:var(--green-dk); }
+.decade-badge.past    { background:var(--border2);   color:var(--text3); }
+.decade-badge.future  { background:var(--blue-lt);   color:var(--blue); }
+
+.decade-grid { display:flex; gap:8px; }
+.decade-block {
+  flex:1; background:var(--bg); border:1px solid var(--border2);
+  border-radius:8px; padding:10px 12px; text-align:center;
+  transition:border-color .15s;
+}
+.decade-block:hover { border-color:var(--green); }
+.decade-block.active { background:var(--green-lt); border-color:rgba(0,132,61,.3); }
+.decade-block-label {
+  font-size:9px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--text3); margin-bottom:4px;
+}
+.decade-block.active .decade-block-label { color:var(--green-dk); }
+.decade-block-val {
+  font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:700; line-height:1;
+  color:var(--text);
+}
+.decade-block.active .decade-block-val { color:var(--green); }
+.decade-block-unit { font-size:9px; color:var(--text3); margin-top:2px; }
+.decade-divider {
+  width:1px; background:var(--border2); align-self:stretch; margin:0 2px;
+}
+.decade-total-row {
+  margin-top:12px; padding-top:10px; border-top:1px solid var(--border2);
+  display:flex; justify-content:space-between; align-items:center;
+}
+.decade-total-label { font-size:10px; font-weight:700; color:var(--text2); }
+.decade-total-val {
+  font-family:'Barlow Condensed',sans-serif; font-size:16px; font-weight:700;
+  color:var(--green);
 }
 
 /* ─── HISTORIQUE ITEMS ─── */
@@ -392,6 +455,69 @@ def last_val(df,col,col_d="Date"):
     t["_s"]=t[col_d].apply(dsort); last=t.sort_values("_s").iloc[-1]
     return round(float(last[col]),1),last[col_d]
 
+# ── DECADE HELPER ──
+def get_decade(day):
+    """Retourne D1, D2 ou D3 selon le jour du mois."""
+    if day <= 10: return "D1"
+    elif day <= 20: return "D2"
+    else: return "D3"
+
+def compute_decades(df, col_total, date_col="Date"):
+    """
+    Pour chaque mois présent dans df, calcule D1/D2/D3 et le total mensuel.
+    Retourne une liste de dicts : {mois, annee, mois_label, D1, D2, D3, total}
+    """
+    if df is None or df.empty:
+        return []
+    results = {}
+    for _, row in df.iterrows():
+        d_str = str(row[date_col])
+        try:
+            parts = d_str.split("/")
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+        except:
+            continue
+        key = (year, month)
+        if key not in results:
+            results[key] = {"annee": year, "mois": month,
+                            "mois_label": f"{NOMS_MOIS.get(month,'?')} {year}",
+                            "D1": 0., "D2": 0., "D3": 0.}
+        dec = get_decade(day)
+        val = float(row[col_total]) if pd.notna(row[col_total]) else 0.
+        results[key][dec] += val
+    # Arrondir et ajouter total
+    out = []
+    for key in sorted(results.keys()):
+        r = results[key]
+        r["D1"] = round(r["D1"], 1)
+        r["D2"] = round(r["D2"], 1)
+        r["D3"] = round(r["D3"], 1)
+        r["total"] = round(r["D1"] + r["D2"] + r["D3"], 1)
+        out.append(r)
+    return out
+
+def decade_status(annee, mois, decade):
+    """Retourne 'past', 'current' ou 'future' pour une décade."""
+    now = datetime.now()
+    cur_day = now.day
+    cur_mois = now.month
+    cur_annee = now.year
+    if annee < cur_annee or (annee == cur_annee and mois < cur_mois):
+        return "past"
+    if annee > cur_annee or (annee == cur_annee and mois > cur_mois):
+        return "future"
+    # Même mois
+    if decade == "D1":
+        if cur_day > 10: return "past"
+        else: return "current"
+    elif decade == "D2":
+        if cur_day > 20: return "past"
+        elif cur_day <= 10: return "future"
+        else: return "current"
+    else:  # D3
+        if cur_day <= 20: return "future"
+        else: return "current"
+
 # ── PLOT THEME ──
 PL=dict(
     paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(242,244,247,0.6)',
@@ -590,13 +716,24 @@ st.markdown(f"""
 # PAGE : ACCUEIL
 # ══════════════════════════════════════════════════════════════════════════════
 if page=="accueil":
-    # Hero banner
     jorf_kpi=jorf_df; safi_kpi=safi_df
-    cj=round(float(jorf_kpi["TOTAL Jorf"].sum()),1) if jorf_kpi is not None else 0.
-    cs=round(float(safi_kpi["TOTAL Safi"].sum()),1) if safi_kpi is not None else 0.
-    ct=round(cj+cs,1)
-    today=datetime.now().strftime("%A %d %B %Y")
 
+    # ── Calculs globaux ──
+    cj   = round(float(jorf_kpi["TOTAL Jorf"].sum()),1)    if jorf_kpi is not None else 0.
+    cs   = round(float(safi_kpi["TOTAL Safi"].sum()),1)    if safi_kpi is not None else 0.
+    ct   = round(cj+cs,1)
+    today= datetime.now().strftime("%A %d %B %Y")
+
+    # Détails Jorf
+    cj_eng = round(float(jorf_kpi["Export Engrais"].sum()),1) if jorf_kpi is not None else 0.
+    cj_cam = round(float(jorf_kpi["Export Camions"].sum()),1) if jorf_kpi is not None else 0.
+    cj_vl  = round(float(jorf_kpi["VL Camions"].sum()),1)     if jorf_kpi is not None else 0.
+
+    # Détails Safi
+    cs_exp = round(float(safi_kpi["TSP Export"].sum()),1) if safi_kpi is not None else 0.
+    cs_ml  = round(float(safi_kpi["TSP ML"].sum()),1)     if safi_kpi is not None else 0.
+
+    # Hero banner
     st.markdown(f"""
     <div style="display:flex;gap:16px;margin-bottom:20px;align-items:stretch">
       <div class="hero" style="flex:2;margin-bottom:0">
@@ -612,7 +749,210 @@ if page=="accueil":
     </div>
     """, unsafe_allow_html=True)
 
-    # Modules disponibles
+    # ── KPI Cards avec détails ──
+    st.markdown('<div class="stitle">Synthèse cumulée — toutes données</div>', unsafe_allow_html=True)
+    k1, k2, k3 = st.columns(3)
+
+    # Card Jorf avec détail des 3 éléments
+    with k1:
+        if jorf_kpi is not None:
+            st.markdown(f"""
+            <div class="kcard green">
+              <div>
+                <div class="kc-lbl">Total Jorf Lasfar</div>
+                <div class="kc-val green">{fmt(cj)}<span class="kc-unit">KT</span></div>
+              </div>
+              <div class="kc-detail">
+                <div class="kc-detail-row">
+                  <span class="kc-detail-label">Export Engrais</span>
+                  <span class="kc-detail-value">{fmt(cj_eng)} KT</span>
+                </div>
+                <div class="kc-detail-row">
+                  <span class="kc-detail-label">Export Camions</span>
+                  <span class="kc-detail-value">{fmt(cj_cam)} KT</span>
+                </div>
+                <div class="kc-detail-row">
+                  <span class="kc-detail-label">VL Camions</span>
+                  <span class="kc-detail-value">{fmt(cj_vl)} KT</span>
+                </div>
+              </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="kcard green">
+              <div class="kc-lbl">Total Jorf Lasfar</div>
+              <div class="kc-val green">—</div>
+              <div class="kc-sub" style="color:#94A3B8">Fichier non chargé</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Card Safi avec détail des 2 éléments
+    with k2:
+        if safi_kpi is not None:
+            st.markdown(f"""
+            <div class="kcard blue">
+              <div>
+                <div class="kc-lbl">Total Safi</div>
+                <div class="kc-val blue">{fmt(cs)}<span class="kc-unit">KT</span></div>
+              </div>
+              <div class="kc-detail">
+                <div class="kc-detail-row">
+                  <span class="kc-detail-label">TSP Export</span>
+                  <span class="kc-detail-value">{fmt(cs_exp)} KT</span>
+                </div>
+                <div class="kc-detail-row">
+                  <span class="kc-detail-label">TSP ML</span>
+                  <span class="kc-detail-value">{fmt(cs_ml)} KT</span>
+                </div>
+              </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="kcard blue">
+              <div class="kc-lbl">Total Safi</div>
+              <div class="kc-val blue">—</div>
+              <div class="kc-sub" style="color:#94A3B8">Fichier non chargé</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Card Total consolidé
+    with k3:
+        st.markdown(f"""
+        <div class="kcard orange">
+          <div>
+            <div class="kc-lbl">Jorf + Safi — Consolidé</div>
+            <div class="kc-val orange">{fmt(ct)}<span class="kc-unit">KT</span></div>
+          </div>
+          <div class="kc-detail">
+            <div class="kc-detail-row">
+              <span class="kc-detail-label">Jorf Lasfar</span>
+              <span class="kc-detail-value">{fmt(cj)} KT</span>
+            </div>
+            <div class="kc-detail-row">
+              <span class="kc-detail-label">Safi</span>
+              <span class="kc-detail-value">{fmt(cs)} KT</span>
+            </div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+    # ── Section Décades ──
+    st.markdown('<div class="stitle orange">Chargements par décade — D1 · D2 · D3</div>', unsafe_allow_html=True)
+
+    dec_jorf = compute_decades(jorf_df, "TOTAL Jorf")  if jorf_df is not None else []
+    dec_safi = compute_decades(safi_df, "TOTAL Safi")  if safi_df is not None else []
+
+    # Affichage Jorf
+    if dec_jorf:
+        st.markdown("""
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;
+                    letter-spacing:1px;text-transform:uppercase;color:#00843D;margin-bottom:8px">
+          ▶ Jorf Lasfar
+        </div>""", unsafe_allow_html=True)
+
+        # On affiche les mois par lignes de 3
+        for i in range(0, len(dec_jorf), 3):
+            cols = st.columns(min(3, len(dec_jorf)-i))
+            for ci, r in enumerate(dec_jorf[i:i+3]):
+                with cols[ci]:
+                    d1s = decade_status(r["annee"], r["mois"], "D1")
+                    d2s = decade_status(r["annee"], r["mois"], "D2")
+                    d3s = decade_status(r["annee"], r["mois"], "D3")
+                    b1 = "current" if d1s=="current" else ("past" if d1s=="past" else "future")
+                    b2 = "current" if d2s=="current" else ("past" if d2s=="past" else "future")
+                    b3 = "current" if d3s=="current" else ("past" if d3s=="past" else "future")
+                    a1 = "active" if d1s=="current" else ""
+                    a2 = "active" if d2s=="current" else ""
+                    a3 = "active" if d3s=="current" else ""
+                    lbl = {"past":"Passé","current":"En cours","future":"À venir"}
+                    st.markdown(f"""
+                    <div class="decade-wrap">
+                      <div class="decade-header">
+                        <div class="decade-title">{r['mois_label']}</div>
+                      </div>
+                      <div class="decade-grid">
+                        <div class="decade-block {a1}">
+                          <div class="decade-block-label">D1 <span class="decade-badge {b1}" style="margin-left:3px">{lbl[d1s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D1'])}</div>
+                          <div class="decade-block-unit">KT · J1–10</div>
+                        </div>
+                        <div class="decade-block {a2}">
+                          <div class="decade-block-label">D2 <span class="decade-badge {b2}" style="margin-left:3px">{lbl[d2s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D2'])}</div>
+                          <div class="decade-block-unit">KT · J11–20</div>
+                        </div>
+                        <div class="decade-block {a3}">
+                          <div class="decade-block-label">D3 <span class="decade-badge {b3}" style="margin-left:3px">{lbl[d3s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D3'])}</div>
+                          <div class="decade-block-unit">KT · J21–fin</div>
+                        </div>
+                      </div>
+                      <div class="decade-total-row">
+                        <span class="decade-total-label">Total mensuel</span>
+                        <span class="decade-total-val">{fmt(r['total'])} KT</span>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background:#F2F4F7;border:1px dashed #E0E4EA;border-radius:10px;
+                    padding:20px;text-align:center;color:#94A3B8;font-size:12px;margin-bottom:12px">
+          Aucune donnée Jorf — chargez un fichier pour voir les décades
+        </div>""", unsafe_allow_html=True)
+
+    # Affichage Safi
+    if dec_safi:
+        st.markdown("""
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;
+                    letter-spacing:1px;text-transform:uppercase;color:#1565C0;margin:14px 0 8px 0">
+          ▶ Safi
+        </div>""", unsafe_allow_html=True)
+
+        for i in range(0, len(dec_safi), 3):
+            cols = st.columns(min(3, len(dec_safi)-i))
+            for ci, r in enumerate(dec_safi[i:i+3]):
+                with cols[ci]:
+                    d1s = decade_status(r["annee"], r["mois"], "D1")
+                    d2s = decade_status(r["annee"], r["mois"], "D2")
+                    d3s = decade_status(r["annee"], r["mois"], "D3")
+                    b1 = "current" if d1s=="current" else ("past" if d1s=="past" else "future")
+                    b2 = "current" if d2s=="current" else ("past" if d2s=="past" else "future")
+                    b3 = "current" if d3s=="current" else ("past" if d3s=="past" else "future")
+                    a1 = "active" if d1s=="current" else ""
+                    a2 = "active" if d2s=="current" else ""
+                    a3 = "active" if d3s=="current" else ""
+                    lbl = {"past":"Passé","current":"En cours","future":"À venir"}
+                    st.markdown(f"""
+                    <div class="decade-wrap">
+                      <div class="decade-header">
+                        <div class="decade-title">{r['mois_label']}</div>
+                      </div>
+                      <div class="decade-grid">
+                        <div class="decade-block {a1}">
+                          <div class="decade-block-label">D1 <span class="decade-badge {b1}" style="margin-left:3px">{lbl[d1s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D1'])}</div>
+                          <div class="decade-block-unit">KT · J1–10</div>
+                        </div>
+                        <div class="decade-block {a2}">
+                          <div class="decade-block-label">D2 <span class="decade-badge {b2}" style="margin-left:3px">{lbl[d2s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D2'])}</div>
+                          <div class="decade-block-unit">KT · J11–20</div>
+                        </div>
+                        <div class="decade-block {a3}">
+                          <div class="decade-block-label">D3 <span class="decade-badge {b3}" style="margin-left:3px">{lbl[d3s]}</span></div>
+                          <div class="decade-block-val">{fmt(r['D3'])}</div>
+                          <div class="decade-block-unit">KT · J21–fin</div>
+                        </div>
+                      </div>
+                      <div class="decade-total-row">
+                        <span class="decade-total-label">Total mensuel</span>
+                        <span class="decade-total-val">{fmt(r['total'])} KT</span>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background:#F2F4F7;border:1px dashed #E0E4EA;border-radius:10px;
+                    padding:20px;text-align:center;color:#94A3B8;font-size:12px;margin-bottom:12px">
+          Aucune donnée Safi — chargez un fichier pour voir les décades
+        </div>""", unsafe_allow_html=True)
+
+    # ── Modules disponibles ──
     st.markdown('<div class="stitle">Modules disponibles</div>', unsafe_allow_html=True)
     m1,m2,m3,m4=st.columns(4)
     modules=[
@@ -634,7 +974,7 @@ if page=="accueil":
                 if st.button(f"Ouvrir →",key=f"open_{nav_key}",use_container_width=True):
                     st.session_state["page"]=nav_key; st.rerun()
 
-    # Historique des fichiers
+    # ── Historique des fichiers ──
     st.markdown('<div class="stitle">Historique des fichiers chargés</div>', unsafe_allow_html=True)
     hj=load_hist(HIST_JORF); hs=load_hist(HIST_SAFI)
 
@@ -869,12 +1209,10 @@ elif page=="suivi":
             if c in disp.columns: cfg[c]=st.column_config.NumberColumn(n,format="%.1f")
         st.dataframe(disp,use_container_width=True,hide_index=True,height=min(660,45+35*len(disp)),column_config=cfg)
 
-        # ── Boutons copier — CORRIGÉS ──
-        # 4 colonnes : Jorf | Safi | Total | Rade
+        # ── Boutons copier ──
         cb1,cb2,cb3,cb4,_=st.columns([1,1,1,1,1])
 
         def copy_btn(container, df, col, lbl, key):
-            """Bouton copier une colonne (lignes hors TOTAL GÉNÉRAL) dans le presse-papier."""
             vals = df[df["Date"] != "TOTAL GÉNÉRAL"][col].dropna().tolist()
             txt = "\t".join(str(round(float(v), 1)) for v in vals)
             bid = f"cb_{key}"
