@@ -1183,7 +1183,7 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 elif page=="ventes":
-    # ─── 1. INITIALISATION ────────────────────────────────────────────────
+    # ─── 1. INITIALISATION ET FORMATAGE ──────────────────────────────────
     if "ventes_df" not in st.session_state:
         st.session_state["ventes_df"] = None
         st.session_state["ventes_mapping"] = {}
@@ -1191,9 +1191,13 @@ elif page=="ventes":
     def clean_numeric_v(series):
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
-    st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage OCP</div>', unsafe_allow_html=True)
+    def fmt_fr(val):
+        """Remplace le point par la virgule pour l'affichage OCP"""
+        return f"{val:,.1f}".replace(",", " ").replace(".", ",").replace(" ", " ")
+
+    st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage par Décades</div>', unsafe_allow_html=True)
     
-    # ─── 2. CHARGEMENT (LECTURE TOTALE) ───────────────────────────────────
+    # ─── 2. CHARGEMENT ───────────────────────────────────────────────────
     file_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T)
 
     if file_v:
@@ -1204,16 +1208,17 @@ elif page=="ventes":
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_full.columns = [str(c).strip() for c in df_full.columns]
             st.session_state["ventes_df"] = df_full
-            st.success("✅ Fichier importé avec succès.")
+            st.success("✅ Fichier importé.")
         except Exception as e:
             st.error(f"Erreur : {e}")
 
-    # ─── 3. MAPPING ET FILTRAGE INTELLIGENT ──────────────────────────────
+    # ─── 3. LOGIQUE DE FILTRAGE ──────────────────────────────────────────
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
     if df_raw is not None:
-        with st.expander("⚙️ CONFIGURATION DU MAPPING (7 COLONNES)"):
+        # (Expander de Mapping reste identique...)
+        with st.expander("⚙️ CONFIGURATION DU MAPPING"):
             new_map = {}
             roles = {"mois":"Mois", "site":"Site", "status":"Statut", "conf":"Confirmation", "d1":"D1", "d2":"D2", "d3":"D3"}
             c_m = st.columns(4)
@@ -1222,43 +1227,34 @@ elif page=="ventes":
                 idx = opts.index(vmap.get(rk)) if vmap.get(rk) in opts else 0
                 sel = c_m[i%4].selectbox(f"{rl}", opts, index=idx, key=f"v_{rk}")
                 new_map[rk] = sel if sel != "(non mappé)" else None
-            if st.button("💾 Enregistrer la configuration"):
+            if st.button("💾 Enregistrer"):
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # --- A. FILTRE STATUT (AUTOMATIQUE) ---
+        # A. Filtre Statut Intelligent (Rade/Cours/Nommée)
         df_f = df_raw.copy()
         c_status = vmap.get("status")
         if c_status:
-            # Filtrage intelligent : Rade, Cours, Nommée
             mots_cles = ["nomm", "rade", "cours"]
             df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
 
-        # --- B. FILTRES FIXES (FRANÇAIS) ---
+        # B. Filtres Fixes en Français
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
         
-        # 1. Filtre Mois (En Français)
         liste_mois = ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
                       "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        
-        sel_m = f1.selectbox("📅 Sélectionner le Mois", liste_mois)
+        sel_m = f1.selectbox("📅 Mois", liste_mois)
         c_mois = vmap.get("mois")
-        
         if sel_m != "Tous" and c_mois:
-            # On utilise .str.contains avec case=False pour être sûr de trouver le mois 
-            # même si l'orthographe dans l'Excel varie légèrement (ex: fevrier vs Février)
             df_f = df_f[df_f[c_mois].astype(str).str.contains(sel_m, case=False, na=False)]
 
-        # 2. Filtre Site (Safi / Jorf)
         liste_sites = ["Tous", "SAFI", "JORF"]
-        sel_s = f2.selectbox("📍 Port / Site", liste_sites)
+        sel_s = f2.selectbox("📍 Site", liste_sites)
         c_site = vmap.get("site")
         if sel_s != "Tous" and c_site:
-            # Filtre souple pour trouver JORF ou SAFI même si le texte est plus long
             df_f = df_f[df_f[c_site].astype(str).str.upper().str.contains(sel_s)]
 
-        # 3. Filtre Confirmation (Conf / Res.CAPA)
         liste_conf = ["Tous", "CONF", "Res.CAPA"]
         sel_co = f3.selectbox("✅ Confirmation", liste_conf)
         c_conf = vmap.get("conf")
@@ -1266,25 +1262,40 @@ elif page=="ventes":
             df_f = df_f[df_f[c_conf].astype(str).str.strip() == sel_co]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ─── 4. CALCULS ET AFFICHAGE FINAL ────────────────────────────────
+        # ─── 4. CALCULS ET CARTES DE DÉCADES ──────────────────────────────
         v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
-        t1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
-        t2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
-        t3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
-        total_kt = round(t1 + t2 + t3, 1)
+        val_d1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
+        val_d2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
+        val_d3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
+        total_m = val_d1 + val_d2 + val_d3
 
-        st.markdown(f"""<div style="background:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #00843D; margin:10px 0;">
-            <span style="font-weight:bold; color:#333;">TOTAL FILTRÉ : </span>
-            <span style="font-size:24px; font-weight:800; color:#00843D;">{total_kt} KT</span>
+        # Affichage des 3 Cards Décades
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f'<div style="background:#E3F2FD; padding:15px; border-radius:10px; border-top:5px solid #2196F3; text-align:center;"><div style="color:#1565C0; font-weight:bold;">D1 (1-10)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d1)} KT</div></div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f'<div style="background:#FFF3E0; padding:15px; border-radius:10px; border-top:5px solid #FF9800; text-align:center;"><div style="color:#E65100; font-weight:bold;">D2 (11-20)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d2)} KT</div></div>', unsafe_allow_html=True)
+        with c3:
+            st.markdown(f'<div style="background:#E8F5E9; padding:15px; border-radius:10px; border-top:5px solid #4CAF50; text-align:center;"><div style="color:#1B5E20; font-weight:bold;">D3 (21+)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d3)} KT</div></div>', unsafe_allow_html=True)
+
+        st.markdown(f"""<div style="background:#6B3FA0; color:white; padding:15px; border-radius:10px; margin-top:15px; text-align:center;">
+            <span style="font-size:18px;">TOTAL PIPELINE {sel_m.upper()} : </span>
+            <span style="font-size:28px; font-weight:900;">{fmt_fr(total_m)} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # Affichage des 7 colonnes
+        # ─── 5. TABLEAU FINAL ──────────────────────────────────────────────
         cols_finales = [vmap[k] for k in ["mois", "site", "status", "conf", "d1", "d2", "d3"] if vmap.get(k)]
         
         if not df_f.empty:
-            st.dataframe(df_f[cols_finales], use_container_width=True, hide_index=True)
+            # Pour le tableau, on convertit les colonnes numériques en chaînes avec virgule
+            df_disp = df_f[cols_finales].copy()
+            for col_num in [v_d1, v_d2, v_d3]:
+                if col_num:
+                    df_disp[col_num] = df_disp[col_num].apply(lambda x: fmt_fr(clean_numeric_v(pd.Series([x])).iloc[0]))
+            
+            st.dataframe(df_disp, use_container_width=True, hide_index=True)
         else:
-            st.info("ℹ️ Aucune donnée pour cette combinaison de filtres (Mois/Site/Conf).")
+            st.info("ℹ️ Aucune donnée pour ces filtres.")
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
