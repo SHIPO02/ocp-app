@@ -1444,6 +1444,81 @@ elif page=="stock":
             if st.button(f"Lancer la simulation — Jorf / {mj}",key=f"{pj}_btn",type="primary"):
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
+elif page=="ventes":
+    import json as _json
+    import google.generativeai as _genai
+
+    # --- 1. FONCTIONS UTILES (Pour éviter les NameError) ---
+    def read_excel_raw(raw_bytes, fname):
+        ff = io.BytesIO(raw_bytes); ff.name = fname
+        r, e = read_bytes(ff)
+        xl = pd.ExcelFile(io.BytesIO(r), engine=e)
+        sheets = {sn: pd.read_excel(io.BytesIO(r), sheet_name=sn, header=None, engine=e) for sn in xl.sheet_names}
+        return sheets, r, e
+
+    def df_to_text_sample(df, max_rows=6):
+        lines = []
+        for ri in range(min(max_rows, len(df))):
+            lines.append(" | ".join([str(v).strip() for v in df.iloc[ri].tolist()]))
+        return "\n".join(lines)
+
+    def parse_ventes_with_mapping(raw_bytes, fname, m):
+        ff = io.BytesIO(raw_bytes); ff.name = fname
+        r, e = read_bytes(ff)
+        df_raw = pd.read_excel(io.BytesIO(r), sheet_name=m['sheet'], header=m['header_row'], engine=e)
+        rows = []
+        for _, row in df_raw.iterrows():
+            m_val = str(row.get(m['month_col'], "")).strip()
+            if m_val.lower() in ["total", "nan", ""]: continue
+            d1, d2, d3 = force_n(row.get(m['d1_col'])), force_n(row.get(m['d2_col'])), force_n(row.get(m['d3_col']))
+            rows.append({"Mois": m_val, "D1": d1, "D2": d2, "D3": d3, "Total": round(d1+d2+d3,1), 
+                         "Status": str(row.get(m['status_col'], "")), "Raw": " ".join(row.astype(str))})
+        return pd.DataFrame(rows)
+
+    # --- 2. CONFIGURATION IA ---
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        _genai.configure(api_key=api_key)
+        model = _genai.GenerativeModel('gemini-1.5-flash')
+    except:
+        st.error("🔑 Configurez 'GEMINI_API_KEY' dans les Secrets Streamlit.")
+        st.stop()
+
+    st.markdown('<div class="stitle purple">Pipeline des Ventes — IA & Filtres</div>', unsafe_allow_html=True)
+
+    # --- 3. CHARGEMENT ---
+    with st.container():
+        st.markdown('<div class="upload-zone">', unsafe_allow_html=True)
+        file_v = st.file_uploader("Pipeline Excel", type=EXCEL_T, key="v_up")
+        if file_v and st.button("🚀 Analyser avec Gemini"):
+            with st.spinner("Analyse par l'IA..."):
+                raw_v = file_v.read()
+                sheets, _, _ = read_excel_raw(raw_v, file_v.name)
+                sample_txt = "\n".join([f"Sheet: {k}\n{df_to_text_sample(v, 8)}" for k, v in list(sheets.items())[:3]])
+                prompt = f"Retourne UNIQUEMENT un JSON avec: sheet, header_row, month_col, d1_col, d2_col, d3_col, status_col, unit.\n{sample_txt}"
+                resp = model.generate_content(prompt)
+                mapping = _json.loads(resp.text.replace("```json","").replace("```","").strip())
+                st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, file_v.name, mapping)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- 4. FILTRAGE ET AFFICHAGE ---
+    v_df = st.session_state.get("ventes_df")
+    if v_df is not None:
+        st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        site = c1.selectbox("📍 Site", ["Tous", "Jorf", "Safi"])
+        statut = c2.selectbox("✅ Confirmation", ["Tous"] + sorted(v_df["Status"].unique().tolist()))
+        mois = c3.selectbox("📅 Mois", ["Tous"] + v_df["Mois"].unique().tolist())
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Application filtres
+        df_f = v_df.copy()
+        if site != "Tous": df_f = df_f[df_f["Raw"].str.contains(site, case=False)]
+        if statut != "Tous": df_f = df_f[df_f["Status"] == statut]
+        if mois != "Tous": df_f = df_f[df_f["Mois"] == mois]
+
+        st.metric("Total Filtré", f"{round(df_f['Total'].sum(), 1)} KT")
+        st.dataframe(df_f.drop(columns=["Raw"]), use_container_width=True, hide_index=True)
 elif page=="navires":
     st.markdown("""<div class="ph-card"><h2>Export Navire</h2>
     <p>Ce module permettra de planifier les chargements navires.</p>
