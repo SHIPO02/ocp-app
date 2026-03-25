@@ -11,24 +11,19 @@ import google.generativeai as genai
 # ══════════════════════════════════════════════════════
 st.set_page_config(page_title="OCP Manufacturing", layout="wide", initial_sidebar_state="expanded")
 
-# Récupération sécurisée de la clé API via Streamlit Secrets
+# Configuration sécurisée via Streamlit Secrets
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model_ai = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error("Erreur de configuration de la clé API. Vérifiez vos secrets Streamlit.")
+    st.error("⚠️ Clé API non configurée. Ajoutez GEMINI_API_KEY dans les Secrets Streamlit.")
 
 def get_smart_mapping(df_columns, target_columns, context="Données OCP"):
-    """L'IA analyse sémantiquement les colonnes Excel pour le mapping."""
+    """L'IA analyse sémantiquement les colonnes Excel."""
     prompt = f"""
-    Tu es un expert logistique chez OCP. Analyse ces colonnes d'un fichier Excel : {df_columns}
-    Je dois extraire ces informations cibles : {target_columns}
-    
-    Instructions :
-    - Identifie quelle colonne Excel correspond sémantiquement à chaque cible.
-    - Pour les décades (D1, D2, D3), cherche les volumes par période de 10 jours.
-    - Pour le statut, cherche la colonne de planification.
-    - Réponds UNIQUEMENT avec un JSON pur : {{"colonne_trouvee_excel": "nom_cible_voulu"}}
+    Expert logistique OCP, analyse ces colonnes Excel : {df_columns}
+    Identifie les correspondances pour : {target_columns}
+    Réponds UNIQUEMENT avec un JSON pur : {{"colonne_excel": "nom_cible"}}
     """
     try:
         response = model_ai.generate_content(prompt)
@@ -69,16 +64,16 @@ html,body,[class*="css"] { font-family:'Barlow',sans-serif !important; color:var
 .decade-block-val { font-family:'Barlow Condensed',sans-serif; font-size:18px; font-weight:700; }
 .stitle { font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:700; text-transform:uppercase; color:var(--text2); margin:20px 0 10px 0; display:flex; align-items:center; gap:8px; }
 .stitle::before { content:''; width:4px; height:15px; background:var(--green); border-radius:2px; }
-.upload-zone { background:var(--white); border:1.5px dashed var(--border); border-radius:10px; padding:15px; text-align:center; }
 </style>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
-# PERSISTENCE & UTILS
+# CACHE & UTILS
 # ══════════════════════════════════════════════════════
 CACHE_DIR = ".ocp_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
-JORF_CACHE, SAFI_CACHE, VENTES_CACHE = [os.path.join(CACHE_DIR, f"{x}.pkl") for x in ["jorf", "safi", "ventes"]]
+FILES = ["jorf", "safi", "ventes"]
+CACHES = {x: os.path.join(CACHE_DIR, f"{x}.pkl") for x in FILES}
 
 def save_cache(p, d): 
     with open(p, "wb") as f: pickle.dump(d, f)
@@ -99,9 +94,9 @@ def fmt(n): return f"{n:,.1f}".replace(",", " ")
 # ══════════════════════════════════════════════════════
 if "page" not in st.session_state: st.session_state["page"] = "accueil"
 
-for key, cache in [("jorf_df", JORF_CACHE), ("safi_df", SAFI_CACHE), ("ventes_df", VENTES_CACHE)]:
+for key in ["jorf_df", "safi_df", "ventes_df"]:
     if key not in st.session_state:
-        c = load_cache(cache)
+        c = load_cache(CACHES[key.split('_')[0]])
         st.session_state[key] = c["df"] if c else None
 
 with st.sidebar:
@@ -114,31 +109,35 @@ with st.sidebar:
 page = st.session_state["page"]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE : ACCUEIL
+# PAGE : ACCUEIL (VERSION SÉCURISÉE SANS KEYERROR)
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "accueil":
     st.markdown('<div class="topbar"><div style="font-size:18px; font-weight:700;">Dashboard Global</div></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
+    
     with c1: 
-        v = st.session_state["jorf_df"]["TOTAL"].sum() if st.session_state["jorf_df"] is not None else 0
-        st.markdown(f'<div class="kcard green"><div class="kc-lbl">Jorf Lasfar</div><div class="kc-val green">{fmt(v)} KT</div></div>', unsafe_allow_html=True)
+        df_j = st.session_state.get("jorf_df")
+        v_j = df_j["TOTAL"].sum() if df_j is not None and "TOTAL" in df_j.columns else 0
+        st.markdown(f'<div class="kcard green"><div class="kc-lbl">Jorf Lasfar</div><div class="kc-val green">{fmt(v_j)} KT</div></div>', unsafe_allow_html=True)
     with c2:
-        v = st.session_state["safi_df"]["TOTAL"].sum() if st.session_state["safi_df"] is not None else 0
-        st.markdown(f'<div class="kcard blue"><div class="kc-lbl">Safi</div><div class="kc-val blue">{fmt(v)} KT</div></div>', unsafe_allow_html=True)
+        df_s = st.session_state.get("safi_df")
+        v_s = df_s["TOTAL"].sum() if df_s is not None and "TOTAL" in df_s.columns else 0
+        st.markdown(f'<div class="kcard blue"><div class="kc-lbl">Safi</div><div class="kc-val blue">{fmt(v_s)} KT</div></div>', unsafe_allow_html=True)
     with c3:
-        v = st.session_state["ventes_df"][["D1","D2","D3"]].sum().sum() if st.session_state["ventes_df"] is not None else 0
-        st.markdown(f'<div class="kcard orange"><div class="kc-lbl">Pipe Ventes</div><div class="kc-val orange">{fmt(v)} KT</div></div>', unsafe_allow_html=True)
+        df_v = st.session_state.get("ventes_df")
+        v_v = df_v[["D1","D2","D3"]].sum().sum() if df_v is not None and all(x in df_v.columns for x in ["D1","D2","D3"]) else 0
+        st.markdown(f'<div class="kcard orange"><div class="kc-lbl">Pipe Ventes</div><div class="kc-val orange">{fmt(v_v)} KT</div></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE : SUIVI CHARGEMENT
+# PAGE : SUIVI CHARGEMENT (IA MAPPING)
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "suivi":
     st.markdown('<div class="topbar"><div style="font-size:18px; font-weight:700;">Suivi Journalier (Jorf / Safi)</div></div>', unsafe_allow_html=True)
     col_j, col_s = st.columns(2)
     
     for col, name, cache_p, sess_k, targets in [
-        (col_j, "Jorf Lasfar", JORF_CACHE, "jorf_df", ["Date", "Export Engrais", "Export Camions", "VL Camions"]),
-        (col_s, "Safi", SAFI_CACHE, "safi_df", ["Date", "TSP Export", "TSP ML"])
+        (col_j, "Jorf Lasfar", CACHES["jorf"], "jorf_df", ["Date", "Export Engrais", "Export Camions", "VL Camions"]),
+        (col_s, "Safi", CACHES["safi"], "safi_df", ["Date", "TSP Export", "TSP ML"])
     ]:
         with col:
             st.markdown(f'<div class="stitle">Import {name}</div>', unsafe_allow_html=True)
@@ -148,7 +147,7 @@ elif page == "suivi":
                 with st.expander("🤖 IA : Mapping automatique", expanded=True):
                     mapping = get_smart_mapping(list(df_raw.columns), targets, name)
                     final_map = st.data_editor(mapping, key=f"edit_{sess_k}", use_container_width=True)
-                    if st.button(f"Valider {name}"):
+                    if st.button(f"Confirmer {name}"):
                         df = df_raw.rename(columns=final_map)
                         df = df[[c for c in targets if c in df.columns]].dropna(subset=["Date"])
                         for c in df.columns: 
@@ -158,50 +157,41 @@ elif page == "suivi":
                         save_cache(cache_p, {"df": df}); st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE : PIPELINE VENTES
+# PAGE : PIPELINE VENTES (IA DÉCADES)
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "ventes":
-    st.markdown('<div class="topbar"><div style="font-size:18px; font-weight:700;">Pipeline Ventes - Analyse Décades</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="topbar"><div style="font-size:18px; font-weight:700;">Analyse Pipeline Ventes</div></div>', unsafe_allow_html=True)
     
-    uc1, _ = st.columns([1, 2])
-    with uc1:
-        st.markdown('<div class="upload-zone">', unsafe_allow_html=True)
-        f_v = st.file_uploader("Fichier Pipeline Ventes", type=["xlsx", "xlsb"], key="up_v")
-        if f_v:
-            df_raw = pd.read_excel(f_v)
-            targets_v = ["Physical Month", "Status Planif", "D1", "D2", "D3"]
-            with st.expander("🤖 IA : Détection des Décades", expanded=True):
-                mapping_v = get_smart_mapping(list(df_raw.columns), targets_v, "Pipeline Ventes")
-                final_map_v = st.data_editor(mapping_v, use_container_width=True)
-                if st.button("Confirmer Pipeline"):
-                    df_v = df_raw.rename(columns=final_map_v)
-                    for d in ["D1", "D2", "D3"]: df_v[d] = df_v[d].apply(force_n)
-                    st.session_state["ventes_df"] = df_v
-                    save_cache(VENTES_CACHE, {"df": df_v}); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+    f_v = st.file_uploader("Fichier Pipeline Ventes", type=["xlsx", "xlsb"], key="up_v")
+    if f_v:
+        df_raw = pd.read_excel(f_v)
+        targets_v = ["Physical Month", "Status Planif", "D1", "D2", "D3"]
+        with st.expander("🤖 IA : Détection des colonnes", expanded=True):
+            mapping_v = get_smart_mapping(list(df_raw.columns), targets_v, "Pipeline Ventes")
+            final_map_v = st.data_editor(mapping_v, use_container_width=True)
+            if st.button("Valider Pipeline"):
+                df_v = df_raw.rename(columns=final_map_v)
+                for d in ["D1", "D2", "D3"]: 
+                    if d in df_v.columns: df_v[d] = df_v[d].apply(force_n)
+                st.session_state["ventes_df"] = df_v
+                save_cache(CACHES["ventes"], {"df": df_v}); st.rerun()
 
-    if st.session_state["ventes_df"] is not None:
+    if st.session_state.get("ventes_df") is not None:
         df = st.session_state["ventes_df"]
-        mois = st.selectbox("Sélectionner le Mois", df["Physical Month"].unique())
-        df_m = df[df["Physical Month"] == mois]
+        mois = st.selectbox("Mois", df["Physical Month"].unique() if "Physical Month" in df.columns else ["N/A"])
+        df_m = df[df["Physical Month"] == mois] if "Physical Month" in df.columns else df
         
-        st.markdown(f'<div class="stitle orange">Situation — {mois} (KT)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="stitle orange">Situation des décades (KT)</div>', unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        configs = [(c1, "⚓ En Rade", "purple", "2."), (c2, "🚢 En cours", "green", "1."), (c3, "📦 Chargé", "blue", "0.")]
+        conf = [(c1, "⚓ En Rade", "purple", "2."), (c2, "🚢 En cours", "green", "1."), (c3, "📦 Chargé", "blue", "0.")]
         
-        for col, title, color, code in configs:
-            sub = df_m[df_m["Status Planif"].astype(str).str.contains(code, na=False)]
-            d1, d2, d3 = sub["D1"].sum(), sub["D2"].sum(), sub["D3"].sum()
-            with col:
-                st.markdown(f"""
-                <div class="decade-wrap">
-                    <div style="font-weight:700; color:var(--text2);">{title}</div>
-                    <div class="decade-grid">
+        for col, title, color, code in conf:
+            if "Status Planif" in df_m.columns:
+                sub = df_m[df_m["Status Planif"].astype(str).str.contains(code, na=False)]
+                d1, d2, d3 = [sub[x].sum() if x in sub.columns else 0 for x in ["D1","D2","D3"]]
+                with col:
+                    st.markdown(f"""<div class="decade-wrap"><div style="font-weight:700;">{title}</div><div class="decade-grid">
                         <div class="decade-block"><div class="decade-block-label">D1</div><div class="decade-block-val">{fmt(d1)}</div></div>
                         <div class="decade-block"><div class="decade-block-label">D2</div><div class="decade-block-val">{fmt(d2)}</div></div>
                         <div class="decade-block"><div class="decade-block-label">D3</div><div class="decade-block-val">{fmt(d3)}</div></div>
-                    </div>
-                    <div style="margin-top:12px; text-align:right; font-weight:800; color:var(--{color});">Total: {fmt(d1+d2+d3)} KT</div>
-                </div>""", unsafe_allow_html=True)
-        st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
-        st.dataframe(df_m[["Status Planif", "D1", "D2", "D3"]], use_container_width=True, hide_index=True)
+                    </div><div style="margin-top:10px;text-align:right;font-weight:800;color:var(--{color});">Total: {fmt(d1+d2+d3)} KT</div></div>""", unsafe_allow_html=True)
