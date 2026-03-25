@@ -1873,26 +1873,46 @@ Réponds directement avec le texte de l'analyse, sans titre, sans bullet points,
 
     if ventes_df is not None and not ventes_df.empty:
 
-        # ── Filtre par mois ──
-        st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
-        tous_mois = ventes_df["Mois"].unique().tolist()
+      # ── Filtre par mois (CORRIGÉ) ──
+st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
 
-        with st.container():
-            st.markdown('<div class="filter-panel"><div class="filter-panel-title">Sélection des mois</div>', unsafe_allow_html=True)
-            col_fa, col_fb = st.columns([1, 3])
-            with col_fa:
-                filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
-            with col_fb:
-                if filtre_mode == "Sélection":
-                    mois_choisis = st.multiselect(
-                        "Mois à afficher", options=tous_mois,
-                        default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
-                        key="vf_mois"
-                    )
-                else:
-                    mois_choisis = tous_mois
-            st.markdown('</div>', unsafe_allow_html=True)
+# Détection automatique de la colonne temporelle (Mois, Month, Période...)
+col_temporelle = None
+options_possibles = ["Mois", "Month", "Période", "Period", "Période planif"]
 
+# 1. On teste d'abord ce que l'IA a trouvé
+mapping_ia = st.session_state.get("ventes_mapping", {}).get("month_col")
+if mapping_ia in ventes_df.columns:
+    col_temporelle = mapping_ia
+# 2. Sinon, on cherche manuellement dans le tableau
+else:
+    for c in ventes_df.columns:
+        if any(key.lower() in str(c).lower() for key in options_possibles):
+            col_temporelle = c
+            break
+
+# 3. On extrait les données ou on utilise la 1ère colonne en dernier recours
+if col_temporelle:
+    tous_mois = ventes_df[col_temporelle].unique().tolist()
+else:
+    tous_mois = ventes_df.iloc[:, 0].unique().tolist()
+    st.warning(f"Colonne temporelle non identifiée, utilisation de : {ventes_df.columns[0]}")
+
+with st.container():
+    st.markdown('<div class="filter-panel"><div class="filter-panel-title">Sélection des mois</div>', unsafe_allow_html=True)
+    col_fa, col_fb = st.columns([1, 3])
+    with col_fa:
+        filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
+    with col_fb:
+        if filtre_mode == "Sélection":
+            mois_choisis = st.multiselect(
+                "Mois à afficher", options=tous_mois,
+                default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
+                key="vf_mois"
+            )
+        else:
+            mois_choisis = tous_mois
+    st.markdown('</div>', unsafe_allow_html=True)
         # Filtrer
         df_filtre = ventes_df[ventes_df["Mois"].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
 
