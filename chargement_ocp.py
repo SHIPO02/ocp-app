@@ -1183,85 +1183,109 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 elif page=="ventes":
-    # --- 1. FONCTION DE NETTOYAGE ---
+    # ─── 1. FONCTIONS ET INITIALISATION ──────────────────────────────────
+    if "ventes_df" not in st.session_state:
+        st.session_state["ventes_df"] = None
+        st.session_state["ventes_mapping"] = {}
+
     def clean_numeric_v(series):
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
-    st.markdown('<div class="stitle">Pipeline des Ventes — Lecture Complète</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle">Pipeline des Ventes — Vue Restreinte (7 Colonnes)</div>', unsafe_allow_html=True)
     
-    file_v = st.file_uploader("Charger Excel (toutes données incluses)", type=EXCEL_T)
+    # ─── 2. CHARGEMENT SANS FILTRES EXCEL ────────────────────────────────
+    file_v = st.file_uploader("Charger le fichier Excel", type=EXCEL_T)
 
     if file_v:
         try:
-            # On lit le fichier brut
             raw_v, eng_v = read_bytes(file_v)
-            
-            # IMPORTANT : On charge sans filtres et on force la lecture de toutes les lignes
-            # On prend l'onglet "January" ou le premier
             xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
             target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
-            
-            # Lecture du DataFrame : Pandas ignore naturellement les filtres Excel
+            # On lit tout le fichier (Pandas ignore les filtres visuels d'Excel)
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
-            
-            # Nettoyage des noms de colonnes
             df_full.columns = [str(c).strip() for c in df_full.columns]
             
-            # On garde les données en mémoire
             st.session_state["ventes_df"] = df_full
-            st.success(f"✅ {len(df_full)} lignes importées (filtres Excel ignorés)")
-            
+            st.success(f"✅ Fichier chargé : {len(df_full)} lignes détectées.")
         except Exception as e:
-            st.error(f"Erreur : {e}")
+            st.error(f"Erreur de lecture : {e}")
 
-    # --- 2. LOGIQUE D'AFFICHAGE ET FILTRAGE INTERNE ---
+    # ─── 3. LOGIQUE D'AFFICHAGE ET FILTRES ───────────────────────────────
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
     if df_raw is not None:
-        # Expander de Mapping (indispensable pour savoir où sont les colonnes)
-        with st.expander("⚙️ Mapper les colonnes (Même si filtré dans Excel)"):
+        # Configuration des 7 colonnes cibles
+        with st.expander("⚙️ CONFIGURATION : Mapper vos 7 colonnes"):
             new_map = {}
-            roles = {"mois":"Mois", "d1":"D1", "d2":"D2", "d3":"D3", "status":"Statut", "site":"Site", "conf":"Confirmation"}
-            cols_m = st.columns(4)
+            roles = {
+                "mois": "Mois", "site": "Site / Port", "status": "Statut Planif",
+                "conf": "Confirmation", "d1": "D1 (KT)", "d2": "D2 (KT)", "d3": "D3 (KT)"
+            }
+            c_m = st.columns(4)
             for i, (rk, rl) in enumerate(roles.items()):
                 opts = ["(non mappé)"] + df_raw.columns.tolist()
                 curr = vmap.get(rk)
-                with cols_m[i%4]:
-                    sel = st.selectbox(f"{rl}", opts, index=opts.index(curr) if curr in opts else 0, key=f"v_{rk}")
+                with c_m[i%4]:
+                    sel = st.selectbox(f"{rl}", opts, index=opts.index(curr) if curr in opts else 0, key=f"map_{rk}")
                     new_map[rk] = sel if sel != "(non mappé)" else None
-            if st.button("🚀 Appliquer"):
+            
+            if st.button("💾 Valider et Filtrer"):
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # --- FILTRAGE DANS STREAMLIT (Nommée, Rade, Chargement) ---
-        c_status = vmap.get("status")
-        c_conf = vmap.get("conf")
-        
+        # --- APPLICATION DES FILTRES ---
         df_f = df_raw.copy()
-
-        # On applique le filtre métier OCP sur le Statut Planif
+        
+        # A. Filtre de sécurité Statut (Nommée, Rade, Chargement)
+        c_status = vmap.get("status")
         if c_status:
             mots_cles = ["nomm", "rade", "cours", "charg"]
             df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
 
-        # --- NOUVEAUTÉ : Filtre dynamique sur la Confirmation (CONF, Res.CAPA, etc.) ---
+        # B. Barre de filtres (Mois, Site, Confirmation)
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+        f1, f2, f3 = st.columns(3)
+        
+        c_mois, c_site, c_conf = vmap.get("mois"), vmap.get("site"), vmap.get("conf")
+        
+        if c_mois:
+            m_list = ["Tous"] + sorted(df_raw[c_mois].dropna().unique().tolist())
+            sel_m = f1.selectbox("📅 Mois", m_list)
+            if sel_m != "Tous": df_f = df_f[df_f[c_mois] == sel_m]
+            
+        if c_site:
+            s_list = ["Tous"] + sorted(df_raw[c_site].dropna().unique().tolist())
+            sel_s = f2.selectbox("📍 Site / Port", s_list)
+            if sel_s != "Tous": df_f = df_f[df_f[c_site] == sel_s]
+            
         if c_conf:
-            # Ici on récupère TOUTES les valeurs uniques de ta colonne Confirmation (voir ton image)
-            conf_list = ["Tous"] + sorted(df_raw[c_conf].dropna().unique().tolist())
-            sel_conf = st.selectbox("🎯 Filtrer par Confirmation (Fichier complet)", conf_list)
-            if sel_conf != "Tous":
-                df_f = df_f[df_f[c_conf] == sel_conf]
+            co_list = ["Tous"] + sorted(df_raw[c_conf].dropna().unique().tolist())
+            sel_co = f3.selectbox("✅ Confirmation", co_list)
+            if sel_co != "Tous": df_f = df_f[df_f[c_conf] == sel_co]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Affichage des volumes
-        t1 = clean_numeric_v(df_f[vmap["d1"]]).sum() if vmap.get("d1") else 0
-        t2 = clean_numeric_v(df_f[vmap["d2"]]).sum() if vmap.get("d2") else 0
-        t3 = clean_numeric_v(df_f[vmap["d3"]]).sum() if vmap.get("d3") else 0
+        # ─── 4. CALCULS ET TABLEAU FINAL (LES 7 COLONNES) ─────────────────
+        # On vérifie que les colonnes D1, D2, D3 sont mappées pour le calcul
+        v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
         
-        st.metric("Total Filtré (KT)", f"{round(t1+t2+t3, 1)}")
-        st.dataframe(df_f, use_container_width=True)
+        t1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
+        t2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
+        t3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
+        total_kt = round(t1 + t2 + t3, 1)
+
+        st.markdown(f"""<div style="background:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #00843D; margin:10px 0;">
+            <span style="font-weight:bold; color:#333;">TOTAL DU PÉRIMITRE : </span>
+            <span style="font-size:22px; font-weight:800; color:#00843D;">{total_kt} KT</span>
+        </div>""", unsafe_allow_html=True)
+
+        # Affichage STRICT des 7 colonnes demandées
+        cols_finales = [vmap[k] for k in ["mois", "site", "status", "conf", "d1", "d2", "d3"] if vmap.get(k)]
+        
+        if not df_f.empty:
+            st.dataframe(df_f[cols_finales], use_container_width=True, hide_index=True)
+        else:
+            st.warning("Aucune donnée ne correspond aux filtres sélectionnés.")
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
