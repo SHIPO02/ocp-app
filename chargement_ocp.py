@@ -1183,7 +1183,7 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 elif page=="ventes":
-    # ─── 1. FONCTIONS ET INITIALISATION ──────────────────────────────────
+    # ─── 1. INITIALISATION ────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
         st.session_state["ventes_df"] = None
         st.session_state["ventes_mapping"] = {}
@@ -1191,10 +1191,10 @@ elif page=="ventes":
     def clean_numeric_v(series):
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
-    st.markdown('<div class="stitle">Pipeline des Ventes — (En Rade / En Cours / Nommée)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage OCP</div>', unsafe_allow_html=True)
     
-    # ─── 2. CHARGEMENT DES DONNÉES ───────────────────────────────────────
-    file_v = st.file_uploader("Charger le fichier Excel", type=EXCEL_T)
+    # ─── 2. CHARGEMENT (LECTURE TOTALE) ───────────────────────────────────
+    file_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T)
 
     if file_v:
         try:
@@ -1204,91 +1204,83 @@ elif page=="ventes":
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_full.columns = [str(c).strip() for c in df_full.columns]
             st.session_state["ventes_df"] = df_full
-            st.success(f"✅ Fichier chargé ({len(df_full)} lignes).")
+            st.success("✅ Fichier importé avec succès.")
         except Exception as e:
             st.error(f"Erreur : {e}")
 
-    # ─── 3. LOGIQUE DE MAPPING ET FILTRAGE ───────────────────────────────
+    # ─── 3. MAPPING ET FILTRAGE INTELLIGENT ──────────────────────────────
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
     if df_raw is not None:
-        with st.expander("⚙️ CONFIGURATION : Mapper les 7 colonnes"):
+        with st.expander("⚙️ CONFIGURATION DU MAPPING (7 COLONNES)"):
             new_map = {}
-            roles = {
-                "mois": "Mois", "site": "Site / Port", "status": "Statut Planif",
-                "conf": "Confirmation", "d1": "D1 (KT)", "d2": "D2 (KT)", "d3": "D3 (KT)"
-            }
+            roles = {"mois":"Mois", "site":"Site", "status":"Statut", "conf":"Confirmation", "d1":"D1", "d2":"D2", "d3":"D3"}
             c_m = st.columns(4)
             for i, (rk, rl) in enumerate(roles.items()):
                 opts = ["(non mappé)"] + df_raw.columns.tolist()
-                curr = vmap.get(rk)
-                with c_m[i%4]:
-                    sel = st.selectbox(f"{rl}", opts, index=opts.index(curr) if curr in opts else 0, key=f"map_{rk}")
-                    new_map[rk] = sel if sel != "(non mappé)" else None
-            if st.button("💾 Appliquer et Filtrer"):
+                idx = opts.index(vmap.get(rk)) if vmap.get(rk) in opts else 0
+                sel = c_m[i%4].selectbox(f"{rl}", opts, index=idx, key=f"v_{rk}")
+                new_map[rk] = sel if sel != "(non mappé)" else None
+            if st.button("💾 Enregistrer la configuration"):
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # --- A. FILTRE INTELLIGENT SUR LES STATUTS ---
+        # --- A. FILTRE STATUT (AUTOMATIQUE) ---
         df_f = df_raw.copy()
         c_status = vmap.get("status")
-        
         if c_status:
-            # On définit les racines des mots-clés intelligents
-            # 'nomm' trouvera Nommée, Nommé, 2.Nommée
-            # 'rade' trouvera En Rade, Rade, 1.Rade
-            # 'cours' trouvera En cours de chargement...
-            mots_cles_ia = ["nomm", "rade", "cours"]
-            
-            def filtrage_intelligent(val):
-                s = str(val).lower()
-                # On garde la ligne si l'un de nos mots-clés est dedans
-                return any(m in s for m in mots_cles_ia)
-            
-            df_f = df_f[df_f[c_status].apply(filtrage_intelligent)]
+            # Filtrage intelligent : Rade, Cours, Nommée
+            mots_cles = ["nomm", "rade", "cours"]
+            df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
 
-        # --- B. BARRE DE FILTRES DYNAMIQUES (Mois / Site / Confirmation) ---
+        # --- B. FILTRES FIXES (DEMANDÉS) ---
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
-        c_mois, c_site, c_conf = vmap.get("mois"), vmap.get("site"), vmap.get("conf")
         
-        # On propose uniquement les valeurs présentes dans notre Pipeline filtré
-        if c_mois:
-            m_list = ["Tous"] + sorted(df_f[c_mois].dropna().unique().tolist())
-            sel_m = f1.selectbox("📅 Mois", m_list)
-            if sel_m != "Tous": df_f = df_f[df_f[c_mois] == sel_m]
-            
-        if c_site:
-            s_list = ["Tous"] + sorted(df_f[c_site].dropna().unique().tolist())
-            sel_s = f2.selectbox("📍 Site / Port", s_list)
-            if sel_s != "Tous": df_f = df_f[df_f[c_site] == sel_s]
-            
-        if c_conf:
-            co_list = ["Tous"] + sorted(df_f[c_conf].dropna().unique().tolist())
-            sel_co = f3.selectbox("✅ Confirmation", co_list)
-            if sel_co != "Tous": df_f = df_f[df_f[c_conf] == sel_co]
+        # 1. Filtre Mois (Toute l'année)
+        liste_mois = ["Tous", "January", "February", "March", "April", "May", "June", 
+                      "July", "August", "September", "October", "November", "December"]
+        sel_m = f1.selectbox("📅 Sélectionner le Mois", liste_mois)
+        c_mois = vmap.get("mois")
+        if sel_m != "Tous" and c_mois:
+            df_f = df_f[df_f[c_mois].astype(str).str.strip() == sel_m]
+
+        # 2. Filtre Site (Safi / Jorf)
+        liste_sites = ["Tous", "SAFI", "JORF"]
+        sel_s = f2.selectbox("📍 Port / Site", liste_sites)
+        c_site = vmap.get("site")
+        if sel_s != "Tous" and c_site:
+            # Filtre souple pour trouver JORF ou SAFI même si le texte est plus long
+            df_f = df_f[df_f[c_site].astype(str).str.upper().str.contains(sel_s)]
+
+        # 3. Filtre Confirmation (Conf / Res.CAPA)
+        liste_conf = ["Tous", "CONF", "Res.CAPA"]
+        sel_co = f3.selectbox("✅ Confirmation", liste_conf)
+        c_conf = vmap.get("conf")
+        if sel_co != "Tous" and c_conf:
+            df_f = df_f[df_f[c_conf].astype(str).str.strip() == sel_co]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ─── 4. CALCULS ET TABLEAU FINAL ──────────────────────────────────
+        # ─── 4. CALCULS ET AFFICHAGE FINAL ────────────────────────────────
         v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
         t1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
         t2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
         t3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
         total_kt = round(t1 + t2 + t3, 1)
 
-        st.markdown(f"""<div style="background:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #6B3FA0; margin:10px 0;">
-            <span style="font-weight:bold; color:#333;">PIPELINE ACTIF (Rade/En cours/Nommée) : </span>
-            <span style="font-size:22px; font-weight:800; color:#6B3FA0;">{total_kt} KT</span>
+        st.markdown(f"""<div style="background:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #00843D; margin:10px 0;">
+            <span style="font-weight:bold; color:#333;">TOTAL FILTRÉ : </span>
+            <span style="font-size:24px; font-weight:800; color:#00843D;">{total_kt} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # Affichage STRICT des 7 colonnes
+        # Affichage des 7 colonnes
         cols_finales = [vmap[k] for k in ["mois", "site", "status", "conf", "d1", "d2", "d3"] if vmap.get(k)]
         
         if not df_f.empty:
             st.dataframe(df_f[cols_finales], use_container_width=True, hide_index=True)
         else:
-            st.warning("Aucun navire en Rade, en Cours ou Nommé pour cette sélection.")
+            st.info("ℹ️ Aucune donnée pour cette combinaison de filtres (Mois/Site/Conf).")
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
