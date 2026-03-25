@@ -1230,20 +1230,30 @@ elif page=="ventes":
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # --- A. FILTRE STRICT SUR LES STATUTS ---
+        # --- A. FILTRE INTELLIGENT SUR LES STATUTS ---
         df_f = df_raw.copy()
         c_status = vmap.get("status")
         
         if c_status:
-            # On ne garde QUE ces 3 statuts (insensible à la casse)
-            valides = ["en rade", "en cours de chargement", "nommée", "nommee"]
-            df_f = df_f[df_f[c_status].astype(str).str.lower().str.strip().isin(valides)]
+            # On définit les racines des mots-clés intelligents
+            # 'nomm' trouvera Nommée, Nommé, 2.Nommée
+            # 'rade' trouvera En Rade, Rade, 1.Rade
+            # 'cours' trouvera En cours de chargement...
+            mots_cles_ia = ["nomm", "rade", "cours"]
+            
+            def filtrage_intelligent(val):
+                s = str(val).lower()
+                # On garde la ligne si l'un de nos mots-clés est dedans
+                return any(m in s for m in mots_cles_ia)
+            
+            df_f = df_f[df_f[c_status].apply(filtrage_intelligent)]
 
-        # --- B. BARRE DE FILTRES (Mois / Site / Confirmation) ---
+        # --- B. BARRE DE FILTRES DYNAMIQUES (Mois / Site / Confirmation) ---
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
         c_mois, c_site, c_conf = vmap.get("mois"), vmap.get("site"), vmap.get("conf")
         
+        # On propose uniquement les valeurs présentes dans notre Pipeline filtré
         if c_mois:
             m_list = ["Tous"] + sorted(df_f[c_mois].dropna().unique().tolist())
             sel_m = f1.selectbox("📅 Mois", m_list)
