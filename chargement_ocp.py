@@ -1183,129 +1183,119 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE : PIPELINE DES VENTES (CORRIGÉ)
-# ══════════════════════════════════════════════════════════════════════════════
 elif page=="ventes":
-    import google.generativeai as _genai  # Utilisation de Gemini comme tes Secrets
-    import json as _json
-
-    # ─── Session state ventes ──────────────────────────────────────────────
+    # ─── 1. INITIALISATION ────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
         st.session_state["ventes_df"] = None
-        st.session_state["ventes_name"] = ""
         st.session_state["ventes_mapping"] = {}
 
-    # ─── Configuration IA Gemini ──────────────────────────────────────────
-    try:
-        api_key_v = st.secrets["GEMINI_API_KEY"]
-        _genai.configure(api_key=api_key_v)
-        model_v = _genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error("🔑 Erreur API : Vérifiez 'GEMINI_API_KEY' dans les Secrets.")
-        st.stop()
-
-    def detect_columns_llm_v(colonnes):
-        prompt = f"""Analyse ces colonnes Excel OCP et retourne UNIQUEMENT un JSON avec ces clés exactes:
-        "mois", "d1", "d2", "d3", "status_planif", "confirmation", "site".
-        Colonnes disponibles : {colonnes}"""
-        try:
-            res = model_v.generate_content(prompt)
-            clean_json = res.text.replace("```json", "").replace("```", "").strip()
-            return _json.loads(clean_json)
-        except:
-            return {r: None for r in ["mois","d1","d2","d3","status_planif","confirmation","site"]}
-
     def clean_numeric_v(series):
-        """Force la conversion en nombre pour éviter le bug '0,0 KT'"""
+        """Nettoie et convertit les données Excel en nombres (KT)"""
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
-    # ─── UI : Chargement ──────────────────────────────────────────────────
-    st.markdown('<div class="stitle">Chargement du fichier Ventes</div>', unsafe_allow_html=True)
-    st.markdown('<div class="ventes-upload"><div class="vu-title">📊 Pipeline des Ventes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle">Pipeline des Ventes — Filtres Avancés</div>', unsafe_allow_html=True)
     
-    file_ventes = st.file_uploader("Fichier", type=EXCEL_T, key="v_up", label_visibility="collapsed")
+    # ─── 2. ZONE DE CHARGEMENT ────────────────────────────────────────────
+    with st.container():
+        st.markdown('<div class="ventes-upload">', unsafe_allow_html=True)
+        file_v = st.file_uploader("Charger le fichier Pipeline Excel", type=EXCEL_T, key="v_up")
+        
+        if file_v:
+            try:
+                raw_v, eng_v = read_bytes(file_v)
+                xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
+                target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
+                df_load = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
+                df_load.columns = [str(c).strip() for c in df_load.columns]
+                
+                st.session_state["ventes_df"] = df_load
+                st.session_state["ventes_name"] = file_v.name
+                st.success(f"✅ Onglet '{target}' chargé.")
+            except Exception as ex:
+                st.error(f"Erreur : {ex}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if file_ventes:
-        try:
-            raw_v, eng_v = read_bytes(file_ventes)
-            xl_v = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
-            # Priorité à l'onglet "January" ou le premier valide
-            target = "January" if "January" in xl_v.sheet_names else xl_v.sheet_names[0]
-            df_v = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
-            df_v.columns = [str(c).strip() for c in df_v.columns]
-            
-            if st.button("🚀 Analyser avec l'IA", type="primary"):
-                with st.spinner("L'IA analyse la structure..."):
-                    st.session_state["ventes_mapping"] = detect_columns_llm_v(df_v.columns.tolist())
-                    st.session_state["ventes_df"] = df_v
-                    st.session_state["ventes_name"] = file_ventes.name
-                st.rerun()
-        except Exception as ex:
-            st.error(f"Erreur lecture : {ex}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ─── UI : Affichage et Filtres ────────────────────────────────────────
-    df_raw_v = st.session_state.get("ventes_df")
+    # ─── 3. CONFIGURATION DU MAPPING ──────────────────────────────────────
+    df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
-    if df_raw_v is not None:
-        st.markdown('<div class="stitle blue">Mapping & Filtres</div>', unsafe_allow_html=True)
-        
-        with st.expander("⚙️ Modifier le mapping des colonnes"):
+    if df_raw is not None:
+        with st.expander("⚙️ CONFIGURATION DU MAPPING", expanded=not vmap):
             new_map = {}
             c_cols = st.columns(4)
-            roles = {"mois":"Mois", "d1":"D1", "d2":"D2", "d3":"D3", "status_planif":"Statut", "confirmation":"Confirm", "site":"Site"}
+            roles = {
+                "mois": "Mois / Month", "d1": "D1 (J1-10)", "d2": "D2 (J11-20)", 
+                "d3": "D3 (J21-fin)", "status": "Statut Planif", "site": "Site / Port",
+                "conf": "Confirmation"
+            }
             for i, (rk, rl) in enumerate(roles.items()):
+                opts = ["(non mappé)"] + df_raw.columns.tolist()
                 curr = vmap.get(rk)
-                opts = ["(non mappé)"] + df_raw_v.columns.tolist()
                 idx = opts.index(curr) if curr in opts else 0
                 with c_cols[i % 4]:
-                    sel = st.selectbox(f"Col. {rl}", opts, index=idx, key=f"sel_{rk}")
+                    sel = st.selectbox(f"{rl}", opts, index=idx, key=f"m_man_{rk}")
                     new_map[rk] = sel if sel != "(non mappé)" else None
-            if st.button("💾 Appliquer le mapping"):
+            
+            if st.button("🚀 Appliquer le mapping"):
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # Filtrage
-        f1, f2, f3 = st.columns(3)
-        col_mois, col_conf, col_site = vmap.get("mois"), vmap.get("confirmation"), vmap.get("site")
-        
-        df_filt = df_raw_v.copy()
-        if col_mois:
-            m_list = f1.multiselect("Mois", sorted(df_raw_v[col_mois].dropna().unique().tolist()))
-            if m_list: df_filt = df_filt[df_filt[col_mois].isin(m_list)]
-        if col_conf:
-            c_list = f2.multiselect("Confirmation", sorted(df_raw_v[col_conf].dropna().unique().tolist()))
-            if c_list: df_filt = df_filt[df_filt[col_conf].isin(c_list)]
-        if col_site:
-            s_list = f3.multiselect("Site", sorted(df_raw_v[col_site].dropna().unique().tolist()))
-            if s_list: df_filt = df_filt[df_filt[col_site].isin(s_list)]
+        # ─── 4. LOGIQUE DE FILTRAGE (STATUT + SITE + CONFIRMATION) ────────
+        col_statut = vmap.get("status")
+        col_site = vmap.get("site")
+        col_conf = vmap.get("conf")
+        df_f = df_raw.copy()
 
-        # --- CALCULS (Correction du bug 0.0 KT) ---
-        v_d1 = clean_numeric_v(df_filt[vmap["d1"]]) if vmap.get("d1") else pd.Series([0])
-        v_d2 = clean_numeric_v(df_filt[vmap["d2"]]) if vmap.get("d2") else pd.Series([0])
-        v_d3 = clean_numeric_v(df_filt[vmap["d3"]]) if vmap.get("d3") else pd.Series([0])
+        # A. Filtre Forcé par Statut (Exigence métier OCP)
+        if col_statut:
+            statuts_valides = ["nommée", "nommee", "en rade", "rade", "en cours de chargement", "en cours"]
+            df_f = df_f[df_f[col_statut].astype(str).str.lower().str.strip().isin(statuts_valides)]
+
+        # B. Interface des Filtres Utilisateur
+        st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+        fc1, fc2 = st.columns(2)
         
-        t1, t2, t3 = round(v_d1.sum(), 1), round(v_d2.sum(), 1), round(v_d3.sum(), 1)
+        sel_site = "Tous"
+        if col_site:
+            sites_dispos = ["Tous"] + sorted(df_f[col_site].dropna().unique().tolist())
+            sel_site = fc1.selectbox("📍 Filtrer par Site (Port)", sites_dispos)
+            if sel_site != "Tous":
+                df_f = df_f[df_f[col_site] == sel_site]
+
+        sel_conf = "Tous"
+        if col_conf:
+            conf_dispos = ["Tous"] + sorted(df_f[col_conf].dropna().unique().tolist())
+            sel_conf = fc2.selectbox("✅ Filtrer par Confirmation", conf_dispos)
+            if sel_conf != "Tous":
+                df_f = df_f[df_f[col_conf] == sel_conf]
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ─── 5. CALCULS ET CARTES ─────────────────────────────────────────
+        st.markdown(f'<div class="stitle orange">Résumé — {sel_site} | Conf: {sel_conf}</div>', unsafe_allow_html=True)
+        
+        t1 = round(clean_numeric_v(df_f[vmap["d1"]]).sum(), 1) if vmap.get("d1") else 0.0
+        t2 = round(clean_numeric_v(df_f[vmap["d2"]]).sum(), 1) if vmap.get("d2") else 0.0
+        t3 = round(clean_numeric_v(df_f[vmap["d3"]]).sum(), 1) if vmap.get("d3") else 0.0
         tall = round(t1 + t2 + t3, 1)
 
-        st.markdown('<div class="stitle orange">Totaux par Décade</div>', unsafe_allow_html=True)
-        dc1, dc2, dc3 = st.columns(3)
-        cards = [(dc1,"d1c","D1",t1), (dc2,"d2c","D2",t2), (dc3,"d3c","D3",t3)]
-        for col, cls, lbl, val in cards:
-            with col:
-                st.markdown(f'<div class="dcard {cls}"><div class="dcard-label">{lbl}</div><div class="dcard-val {cls}">{fmt(val)}<span class="dcard-unit">KT</span></div></div>', unsafe_allow_html=True)
+        k1, k2, k3 = st.columns(3)
+        with k1: st.markdown(f'<div class="dcard d1c"><div class="dcard-label">D1</div><div class="dcard-val d1c">{fmt(t1)}</div></div>', unsafe_allow_html=True)
+        with k2: st.markdown(f'<div class="dcard d2c"><div class="dcard-label">D2</div><div class="dcard-val d2c">{fmt(t2)}</div></div>', unsafe_allow_html=True)
+        with k3: st.markdown(f'<div class="dcard d3c"><div class="dcard-label">D3</div><div class="dcard-val d3c">{fmt(t3)}</div></div>', unsafe_allow_html=True)
 
-        st.markdown(f"""<div style="background:white; border:1px solid #E0E4EA; padding:15px; border-radius:10px; margin-top:10px; display:flex; justify-content:space-between; align-items:center">
-            <span style="font-weight:700; color:#4A5568">▶ TOTAL CUMULÉ</span>
-            <span style="font-size:24px; font-weight:800; color:#00843D">{fmt(tall)} KT</span>
+        st.markdown(f"""<div style="background:white; border:2px solid #00843D; padding:15px; border-radius:10px; margin-top:10px; display:flex; justify-content:space-between; align-items:center">
+            <span style="font-weight:700; color:#4A5568">▶ TOTAL FILTRÉ (KT)</span>
+            <span style="font-size:26px; font-weight:800; color:#00843D">{fmt(tall)} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # Tableau final
-        st.markdown('<div class="stitle">Tableau des Ventes</div>', unsafe_allow_html=True)
-        cols_to_show = [v for v in vmap.values() if v and v in df_filt.columns]
-        st.dataframe(df_filt[cols_to_show], use_container_width=True, hide_index=True)
+        # ─── 6. TABLEAU FINAL ──────────────────────────────────────────────
+        st.markdown('<div class="stitle">Détail du Pipeline filtré</div>', unsafe_allow_html=True)
+        cols_affichage = [v for v in vmap.values() if v and v in df_f.columns]
+        
+        if not df_f.empty:
+            st.dataframe(df_f[cols_affichage], use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ Aucun navire ne correspond à cette combinaison de filtres.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
