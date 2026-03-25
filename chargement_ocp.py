@@ -1485,33 +1485,47 @@ elif page=="ventes":
         st.markdown('<div class="upload-zone">', unsafe_allow_html=True)
         f_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T, key="v_up")
         if f_v and st.button("🚀 Lancer l'Analyse IA"):
-           with st.spinner("L'IA analyse votre fichier..."):
+         with st.spinner("Analyse de l'onglet January par l'IA..."):
                 raw_v = f_v.read()
                 sheets, _, _ = read_excel_raw(raw_v, f_v.name)
                 
-                # --- CORRECTION : Réduction de l'échantillon pour éviter InvalidArgument ---
-                sample_parts = []
-                for k, v in list(sheets.items())[:3]:
-                    # On ne prend que les 10 premières lignes et 15 premières colonnes max
-                    v_small = v.iloc[:10, :15].astype(str)
-                    sample_parts.append(f"Feuille: {k}\n{df_to_text_sample(v_small, 8)}")
-                sample_text = "\n".join(sample_parts)
+                # --- SÉLECTION CIBLÉE DE L'ONGLET ---
+                target_sheet = None
+                # On cherche si "January" existe dans les onglets
+                for sn in sheets.keys():
+                    if "january" in sn.lower():
+                        target_sheet = sn
+                        break
+                
+                # Si on ne trouve pas "January", on prend le premier onglet par défaut
+                if not target_sheet:
+                    target_sheet = list(sheets.keys())[0]
+                    st.warning(f"Onglet 'January' non trouvé. Analyse de : {target_sheet}")
 
-                prompt = f"""Tu es un expert OCP Manufacturing. Analyse cet échantillon Excel et retourne UNIQUEMENT un JSON strict.
-                Clés requises : sheet, header_row (index 0), month_col, d1_col, d2_col, d3_col, status_col, unit.
-                Données :
-                {sample_text}"""
+                # On ne prépare l'échantillon QUE pour cet onglet précis
+                v_data = sheets[target_sheet]
+                v_clean = v_data.iloc[:15, :20].fillna("").astype(str) # On prend un peu plus de colonnes (20)
+                sample_txt = df_to_text_sample(v_clean, 10)
+                
+                prompt = f"""Tu es un expert OCP. Analyse cet échantillon de l'onglet "{target_sheet}" et retourne UNIQUEMENT un JSON.
+                Clés : sheet (doit être "{target_sheet}"), header_row (index 0), month_col, d1_col, d2_col, d3_col, status_col, unit.
+                DONNÉES:
+                {sample_txt}"""
                 
                 try:
                     res = model.generate_content(prompt)
-                    # Nettoyage rigoureux de la réponse JSON
-                    json_str = res.text.replace("```json", "").replace("```", "").strip()
-                    mapping = _json.loads(json_str)
-                    st.session_state["ventes_mapping"] = mapping
-                    st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, f_v.name, mapping)
+                    if res and res.text:
+                        json_str = res.text.replace("```json", "").replace("```", "").strip()
+                        mapping = _json.loads(json_str)
+                        # On s'assure que le mapping utilise bien le bon onglet
+                        mapping['sheet'] = target_sheet 
+                        
+                        st.session_state["ventes_mapping"] = mapping
+                        st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, f_v.name, mapping)
+                    else:
+                        st.error("L'IA n'a pas retourné de réponse pour l'onglet January.")
                 except Exception as e:
-                    st.error(f"Erreur d'analyse IA : {e}")
-
+                    st.error(f"Erreur lors de l'analyse : {str(e)}")
     # --- AFFICHAGE DES RÉSULTATS (Alignement et Sécurité) ---
     v_df = st.session_state.get("ventes_df")
     if v_df is not None:
