@@ -1182,7 +1182,6 @@ elif page=="stock":
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
-
 elif page=="ventes":
     # ─── 1. INITIALISATION ────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
@@ -1193,7 +1192,7 @@ elif page=="ventes":
         """Nettoie et convertit les données Excel en nombres (KT)"""
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
-    st.markdown('<div class="stitle">Pipeline des Ventes — Filtres Avancés</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage Complet</div>', unsafe_allow_html=True)
     
     # ─── 2. ZONE DE CHARGEMENT ────────────────────────────────────────────
     with st.container():
@@ -1204,13 +1203,14 @@ elif page=="ventes":
             try:
                 raw_v, eng_v = read_bytes(file_v)
                 xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
+                # Choix de l'onglet (par défaut le premier ou January)
                 target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
                 df_load = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
                 df_load.columns = [str(c).strip() for c in df_load.columns]
                 
                 st.session_state["ventes_df"] = df_load
                 st.session_state["ventes_name"] = file_v.name
-                st.success(f"✅ Onglet '{target}' chargé.")
+                st.success(f"✅ Données chargées avec succès.")
             except Exception as ex:
                 st.error(f"Erreur : {ex}")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1224,7 +1224,7 @@ elif page=="ventes":
             new_map = {}
             c_cols = st.columns(4)
             roles = {
-                "mois": "Mois / Month", "d1": "D1 (J1-10)", "d2": "D2 (J11-20)", 
+                "mois": "Colonne Mois", "d1": "D1 (J1-10)", "d2": "D2 (J11-20)", 
                 "d3": "D3 (J21-fin)", "status": "Statut Planif", "site": "Site / Port",
                 "conf": "Confirmation"
             }
@@ -1233,45 +1233,54 @@ elif page=="ventes":
                 curr = vmap.get(rk)
                 idx = opts.index(curr) if curr in opts else 0
                 with c_cols[i % 4]:
-                    sel = st.selectbox(f"{rl}", opts, index=idx, key=f"m_man_{rk}")
+                    sel = st.selectbox(f"{rl}", opts, index=idx, key=f"m_fin_{rk}")
                     new_map[rk] = sel if sel != "(non mappé)" else None
             
-            if st.button("🚀 Appliquer le mapping"):
+            if st.button("🚀 Valider la configuration"):
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # ─── 4. LOGIQUE DE FILTRAGE (STATUT + SITE + CONFIRMATION) ────────
+        # ─── 4. LOGIQUE DE FILTRAGE MULTI-CRITÈRES ────────────────────────
         col_statut = vmap.get("status")
         col_site = vmap.get("site")
         col_conf = vmap.get("conf")
+        col_mois = vmap.get("mois")
+        
         df_f = df_raw.copy()
 
-        # A. Filtre Forcé par Statut (Exigence métier OCP)
+        # A. Filtre de sécurité Statut (Nommée, Rade, En cours)
         if col_statut:
-            statuts_valides = ["nommée", "nommee", "en rade", "rade", "en cours de chargement", "en cours"]
-            df_f = df_f[df_f[col_statut].astype(str).str.lower().str.strip().isin(statuts_valides)]
+            statuts_ok = ["nommée", "nommee", "en rade", "rade", "en cours de chargement", "en cours"]
+            df_f = df_f[df_f[col_statut].astype(str).str.lower().str.strip().isin(statuts_ok)]
 
-        # B. Interface des Filtres Utilisateur
+        # B. Barre d'outils des Filtres (Mois, Site, Confirmation)
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
-        fc1, fc2 = st.columns(2)
+        fc1, fc2, fc3 = st.columns(3)
         
+        sel_mois = "Tous"
+        if col_mois:
+            mois_dispos = ["Tous"] + sorted(df_f[col_mois].dropna().unique().tolist())
+            sel_mois = fc1.selectbox("📅 Mois", mois_dispos)
+            if sel_mois != "Tous":
+                df_f = df_f[df_f[col_mois] == sel_mois]
+
         sel_site = "Tous"
         if col_site:
             sites_dispos = ["Tous"] + sorted(df_f[col_site].dropna().unique().tolist())
-            sel_site = fc1.selectbox("📍 Filtrer par Site (Port)", sites_dispos)
+            sel_site = fc2.selectbox("📍 Port / Site", sites_dispos)
             if sel_site != "Tous":
                 df_f = df_f[df_f[col_site] == sel_site]
 
         sel_conf = "Tous"
         if col_conf:
             conf_dispos = ["Tous"] + sorted(df_f[col_conf].dropna().unique().tolist())
-            sel_conf = fc2.selectbox("✅ Filtrer par Confirmation", conf_dispos)
+            sel_conf = fc3.selectbox("✅ Confirmation", conf_dispos)
             if sel_conf != "Tous":
                 df_f = df_f[df_f[col_conf] == sel_conf]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ─── 5. CALCULS ET CARTES ─────────────────────────────────────────
-        st.markdown(f'<div class="stitle orange">Résumé — {sel_site} | Conf: {sel_conf}</div>', unsafe_allow_html=True)
+        # ─── 5. AFFICHAGE DES RÉSULTATS ───────────────────────────────────
+        st.markdown(f'<div class="stitle orange">Analyse : {sel_mois} | {sel_site} | {sel_conf}</div>', unsafe_allow_html=True)
         
         t1 = round(clean_numeric_v(df_f[vmap["d1"]]).sum(), 1) if vmap.get("d1") else 0.0
         t2 = round(clean_numeric_v(df_f[vmap["d2"]]).sum(), 1) if vmap.get("d2") else 0.0
@@ -1279,24 +1288,23 @@ elif page=="ventes":
         tall = round(t1 + t2 + t3, 1)
 
         k1, k2, k3 = st.columns(3)
-        with k1: st.markdown(f'<div class="dcard d1c"><div class="dcard-label">D1</div><div class="dcard-val d1c">{fmt(t1)}</div></div>', unsafe_allow_html=True)
-        with k2: st.markdown(f'<div class="dcard d2c"><div class="dcard-label">D2</div><div class="dcard-val d2c">{fmt(t2)}</div></div>', unsafe_allow_html=True)
-        with k3: st.markdown(f'<div class="dcard d3c"><div class="dcard-label">D3</div><div class="dcard-val d3c">{fmt(t3)}</div></div>', unsafe_allow_html=True)
+        with k1: st.markdown(f'<div class="dcard d1c"><div class="dcard-label">D1 (KT)</div><div class="dcard-val d1c">{fmt(t1)}</div></div>', unsafe_allow_html=True)
+        with k2: st.markdown(f'<div class="dcard d2c"><div class="dcard-label">D2 (KT)</div><div class="dcard-val d2c">{fmt(t2)}</div></div>', unsafe_allow_html=True)
+        with k3: st.markdown(f'<div class="dcard d3c"><div class="dcard-label">D3 (KT)</div><div class="dcard-val d3c">{fmt(t3)}</div></div>', unsafe_allow_html=True)
 
         st.markdown(f"""<div style="background:white; border:2px solid #00843D; padding:15px; border-radius:10px; margin-top:10px; display:flex; justify-content:space-between; align-items:center">
-            <span style="font-weight:700; color:#4A5568">▶ TOTAL FILTRÉ (KT)</span>
+            <span style="font-weight:700; color:#4A5568">▶ TOTAL CUMULÉ DU PÉRIMITRE</span>
             <span style="font-size:26px; font-weight:800; color:#00843D">{fmt(tall)} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # ─── 6. TABLEAU FINAL ──────────────────────────────────────────────
-        st.markdown('<div class="stitle">Détail du Pipeline filtré</div>', unsafe_allow_html=True)
+        # Tableau final
+        st.markdown('<div class="stitle">Détail des navires</div>', unsafe_allow_html=True)
         cols_affichage = [v for v in vmap.values() if v and v in df_f.columns]
         
         if not df_f.empty:
             st.dataframe(df_f[cols_affichage], use_container_width=True, hide_index=True)
         else:
-            st.warning("⚠️ Aucun navire ne correspond à cette combinaison de filtres.")
-
+            st.info("Aucune donnée trouvée pour ces filtres.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
