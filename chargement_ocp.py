@@ -1186,133 +1186,102 @@ elif page=="ventes":
     import google.generativeai as _genai
     import json as _json
 
-    # ─── 1. CONFIGURATION IA ET FORMATAGE ────────────────────────────────
+    # --- 1. CONFIGURATION GEMINI ---
     try:
+        # On utilise la clé que tu viens de mettre dans les Secrets
         _genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         model_ai = _genai.GenerativeModel('gemini-1.5-flash')
-    except:
-        st.error("🔑 Erreur : Clé GEMINI_API_KEY non trouvée dans les Secrets.")
+    except Exception as e:
+        st.error("🔑 Erreur de configuration IA. Vérifiez vos Secrets Streamlit.")
         st.stop()
-
-    if "ventes_df" not in st.session_state:
-        st.session_state["ventes_df"] = None
-        st.session_state["ventes_mapping"] = {}
 
     def clean_numeric_v(series):
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
     def fmt_fr(val):
-        """Formatte les nombres avec virgule et sans espaces inutiles"""
         return f"{val:,.1f}".replace(",", " ").replace(".", ",").replace(" ", " ")
 
-    st.markdown('<div class="stitle">Pipeline des Ventes — Analyse IA Automatique</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle">Pipeline des Ventes — Analyse Automatique IA</div>', unsafe_allow_html=True)
     
-    # ─── 2. CHARGEMENT ET ANALYSE AUTOMATIQUE ────────────────────────────
-    file_v = st.file_uploader("Charger le Pipeline Excel (Analyse automatique)", type=EXCEL_T)
+    file_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T)
 
     if file_v:
         try:
             raw_v, eng_v = read_bytes(file_v)
             xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
+            
+            # --- CIBLAGE DE L'ONGLET JANUARY ---
+            # On cherche "January" ou on prend le premier onglet
             target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_full.columns = [str(c).strip() for c in df_full.columns]
             
             # --- DÉTECTION IA DES COLONNES ---
             if st.session_state.get("ventes_name") != file_v.name:
-                with st.spinner("🤖 L'IA analyse les colonnes de votre fichier OCP..."):
-                    cols_list = df_full.columns.tolist()
-                    prompt = f"""Tu es un expert OCP. Voici les colonnes d'un Excel : {cols_list}
-                    Identifie les correspondances et retourne UNIQUEMENT un JSON avec ces clés :
-                    "mois", "site", "status", "conf", "d1", "d2", "d3".
-                    Exemple: {{"mois": "Physical Month", "d1": "D1", ...}}"""
-                    
-                    res = model_ai.generate_content(prompt)
-                    ai_mapping = _json.loads(res.text.replace("```json", "").replace("```", "").strip())
-                    
-                    st.session_state["ventes_mapping"] = ai_mapping
-                    st.session_state["ventes_df"] = df_full
-                    st.session_state["ventes_name"] = file_v.name
-                    st.success("✅ Configuration automatique terminée par l'IA.")
+                with st.spinner(f"🤖 Gemini analyse l'onglet '{target}'..."):
+                    try:
+                        cols = df_full.columns.tolist()
+                        prompt = f"Expert OCP: Analyse ces colonnes: {cols}. Retourne UNIQUEMENT un JSON avec les clés exactes: mois, site, status, conf, d1, d2, d3."
+                        res = model_ai.generate_content(prompt)
+                        # Nettoyage de la réponse JSON de Gemini
+                        json_str = res.text.replace("```json", "").replace("```", "").strip()
+                        st.session_state["ventes_mapping"] = _json.loads(json_str)
+                        st.session_state["ventes_df"] = df_full
+                        st.session_state["ventes_name"] = file_v.name
+                        st.rerun()
+                    except Exception as ai_err:
+                        st.warning("⚠️ L'IA n'a pas pu mapper automatiquement. Vérifiez la clé ou faites-le manuellement.")
         except Exception as e:
-            st.error(f"Erreur d'analyse IA : {e}")
+            st.error(f"Erreur de lecture : {e}")
 
-    # ─── 3. LOGIQUE DE FILTRAGE ──────────────────────────────────────────
+    # --- 2. AFFICHAGE ET FILTRES ---
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
     if df_raw is not None:
-        # A. Filtre Statut Intelligent (Rade/Cours/Nommée)
+        # Filtre Statut Intelligent (Nommée, Rade, Cours)
         df_f = df_raw.copy()
         c_status = vmap.get("status")
         if c_status and c_status in df_f.columns:
-            mots_cles = ["nomm", "rade", "cours"]
-            df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
+            df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('nomm|rade|cours', na=False)]
 
-        # B. Barre de Filtres Fixes en Français
+        # Barre de filtres (Mois, Site, Confirmation)
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
         
-        c_mois, c_site, c_conf = vmap.get("mois"), vmap.get("site"), vmap.get("conf")
+        c_m, c_s, c_c = vmap.get("mois"), vmap.get("site"), vmap.get("conf")
+        
+        sel_m = f1.selectbox("📅 Mois", ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+        if sel_m != "Tous" and c_m in df_f.columns:
+            df_f = df_f[df_f[c_m].astype(str).str.contains(sel_m, case=False, na=False)]
 
-        # Filtre Mois
-        liste_mois = ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
-                      "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        sel_m = f1.selectbox("📅 Mois", liste_mois)
-        if sel_m != "Tous" and c_mois in df_f.columns:
-            df_f = df_f[df_f[c_mois].astype(str).str.contains(sel_m, case=False, na=False)]
-
-        # Filtre Site
-        liste_sites = ["Tous", "SAFI", "JORF"]
-        sel_s = f2.selectbox("📍 Site", liste_sites)
-        if sel_s != "Tous" and c_site in df_f.columns:
-            df_f = df_f[df_f[c_site].astype(str).str.upper().str.contains(sel_s)]
-
-        # Filtre Confirmation
-        liste_conf = ["Tous", "CONF", "Res.CAPA"]
-        sel_co = f3.selectbox("✅ Confirmation", liste_conf)
-        if sel_co != "Tous" and c_conf in df_f.columns:
-            df_f = df_f[df_f[c_conf].astype(str).str.strip() == sel_co]
+        sel_s = f2.selectbox("📍 Site", ["Tous", "JORF", "SAFI"])
+        if sel_s != "Tous" and c_s in df_f.columns:
+            df_f = df_f[df_f[c_s].astype(str).str.upper().str.contains(sel_s)]
+            
+        sel_co = f3.selectbox("✅ Confirmation", ["Tous", "CONF", "Res.CAPA"])
+        if sel_co != "Tous" and c_c in df_f.columns:
+            df_f = df_f[df_f[c_c].astype(str).str.strip() == sel_co]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ─── 4. CALCULS ET CARTES DE DÉCADES ──────────────────────────────
+        # --- 3. DÉCADES ET TABLEAU ---
         v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
+        t1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
+        t2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
+        t3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
+
+        # Cards KPI
+        k1, k2, k3 = st.columns(3)
+        k1.metric("D1 (1-10)", f"{fmt_fr(t1)} KT")
+        k2.metric("D2 (11-20)", f"{fmt_fr(t2)} KT")
+        k3.metric("D3 (21+)", f"{fmt_fr(t3)} KT")
+
+        # Affichage des 7 colonnes mappées par l'IA
+        cles = ["mois", "site", "status", "conf", "d1", "d2", "d3"]
+        cols_finales = [vmap[k] for k in cles if vmap.get(k) in df_f.columns]
         
-        val_d1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 in df_f.columns else 0
-        val_d2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 in df_f.columns else 0
-        val_d3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 in df_f.columns else 0
-        total_m = val_d1 + val_d2 + val_d3
-
-        c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f'<div style="background:#E3F2FD; padding:15px; border-radius:10px; border-top:5px solid #2196F3; text-align:center;"><div style="color:#1565C0; font-weight:bold;">D1 (1-10)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d1)} KT</div></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div style="background:#FFF3E0; padding:15px; border-radius:10px; border-top:5px solid #FF9800; text-align:center;"><div style="color:#E65100; font-weight:bold;">D2 (11-20)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d2)} KT</div></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div style="background:#E8F5E9; padding:15px; border-radius:10px; border-top:5px solid #4CAF50; text-align:center;"><div style="color:#1B5E20; font-weight:bold;">D3 (21+)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d3)} KT</div></div>', unsafe_allow_html=True)
-
-        st.markdown(f"""<div style="background:#6B3FA0; color:white; padding:15px; border-radius:10px; margin-top:15px; text-align:center;">
-            <span style="font-size:18px;">TOTAL PIPELINE {sel_m.upper()} : </span>
-            <span style="font-size:28px; font-weight:900;">{fmt_fr(total_m)} KT</span>
-        </div>""", unsafe_allow_html=True)
-
-        # ─── 5. TABLEAU FINAL (LES 7 COLONNES) ────────────────────────────
-        # On définit les clés pour l'ordre d'affichage
-        cles_ordre = ["mois", "site", "status", "conf", "d1", "d2", "d3"]
-        cols_finales = [vmap[k] for k in cles_ordre if vmap.get(k) in df_f.columns]
-        
-        if not df_f.empty:
-            df_disp = df_f[cols_finales].copy()
-            # On applique le format virgule aux colonnes de données
-            for k in ["d1", "d2", "d3"]:
-                c_name = vmap.get(k)
-                if c_name in df_disp.columns:
-                    df_disp[c_name] = df_disp[c_name].apply(lambda x: fmt_fr(clean_numeric_v(pd.Series([x])).iloc[0]))
-            
-            st.dataframe(df_disp, use_container_width=True, hide_index=True)
-            
-            # Petit rappel du mapping IA en bas
-            with st.expander("🔍 Voir le mapping automatique de l'IA"):
-                st.json(vmap)
-        else:
-            st.info("ℹ️ Aucune donnée pour ces filtres.")
+        st.markdown(f"**Total Pipeline {sel_m} : {fmt_fr(t1+t2+t3)} KT**")
+        st.dataframe(df_f[cols_finales], use_container_width=True, hide_index=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
