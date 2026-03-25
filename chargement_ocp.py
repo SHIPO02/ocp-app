@@ -1866,225 +1866,95 @@ Réponds directement avec le texte de l'analyse, sans titre, sans bullet points,
         </div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════
-    # DONNÉES + FILTRES
+    # DONNÉES + FILTRES (LIGNE 1870 ENVIRON)
     # ══════════════════════════════════════════════════════
     ventes_df = st.session_state.get("ventes_df")
     unit = mapping.get("unit", "KT") if mapping else "KT"
 
-   # --- LIGNE 1874 ---
-if ventes_df is not None and not ventes_df.empty:
-    # TOUT CE QUI SUIT DOIT ÊTRE DÉCALÉ (4 ESPACES)
-    st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
+    if ventes_df is not None and not ventes_df.empty:
+        st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
 
-    # Détection automatique de la colonne temporelle
-    col_temporelle = None
-    options_possibles = ["Mois", "Month", "Période", "Period"]
+        # 1. Détection automatique de la colonne temporelle (Mois/Month/Période)
+        col_temporelle = None
+        options_possibles = ["Mois", "Month", "Période", "Period"]
+        
+        mapping_ia = st.session_state.get("ventes_mapping", {}).get("month_col")
+        if mapping_ia in ventes_df.columns:
+            col_temporelle = mapping_ia
+        else:
+            for c in ventes_df.columns:
+                if any(key.lower() in str(c).lower() for key in options_possibles):
+                    col_temporelle = c
+                    break
+        
+        # Sécurité si aucune colonne n'est trouvée
+        if not col_temporelle:
+            col_temporelle = ventes_df.columns[0]
 
-    mapping_ia = st.session_state.get("ventes_mapping", {}).get("month_col")
-    if mapping_ia in ventes_df.columns:
-        col_temporelle = mapping_ia
-    else:
-        for c in ventes_df.columns:
-            if any(key.lower() in str(c).lower() for key in options_possibles):
-                col_temporelle = c
-                break
-
-    if col_temporelle:
         tous_mois = ventes_df[col_temporelle].unique().tolist()
-    else:
-        tous_mois = ventes_df.iloc[:, 0].unique().tolist()
 
-    with st.container():
-        # Continue de décaler tout le reste du bloc "with" également...
-        st.markdown('<div class="filter-panel">...</div>', unsafe_allow_html=True)
-        # etc...
-    tous_mois = ventes_df[col_temporelle].unique().tolist()
-else:
-    tous_mois = ventes_df.iloc[:, 0].unique().tolist()
-    st.warning(f"Colonne temporelle non identifiée, utilisation de : {ventes_df.columns[0]}")
+        # 2. Interface de filtrage
+        with st.container():
+            st.markdown('<div class="filter-panel"><div class="filter-panel-title">Sélection des mois</div>', unsafe_allow_html=True)
+            col_fa, col_fb = st.columns([1, 3])
+            with col_fa:
+                filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
+            with col_fb:
+                if filtre_mode == "Sélection":
+                    mois_choisis = st.multiselect(
+                        "Mois à afficher", options=tous_mois,
+                        default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
+                        key="vf_mois"
+                    )
+                else:
+                    mois_choisis = tous_mois
+            st.markdown('</div>', unsafe_allow_html=True) 
 
-with st.container():
-    st.markdown('<div class="filter-panel"><div class="filter-panel-title">Sélection des mois</div>', unsafe_allow_html=True)
-        col_fa, col_fb = st.columns([1, 3])
-        with col_fa:
-            filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
-        with col_fb:
-            if filtre_mode == "Sélection":
-                mois_choisis = st.multiselect(
-                    "Mois à afficher", options=tous_mois,
-                    default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
-                    key="vf_mois"
-                )
-            else:
-                mois_choisis = tous_mois
-        st.markdown('</div>', unsafe_allow_html=True) 
+        # 3. Filtrage effectif
+        df_filtre = ventes_df[ventes_df[col_temporelle].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
 
-    # --- Filtrer (Sorti du bloc "with", aligné avec la colonne du "with") ---
-    df_filtre = ventes_df[ventes_df[col_temporelle].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
+        # 4. Calcul des KPIs
+        total_d1 = round(df_filtre["D1"].sum(), 1)
+        total_d2 = round(df_filtre["D2"].sum(), 1)
+        total_d3 = round(df_filtre["D3"].sum(), 1)
+        total_all = round(total_d1 + total_d2 + total_d3, 1)
+        periode_lbl = f"{len(df_filtre)} mois sélectionnés"
 
-    # --- KPI Cards - Totaux décades ---
-    total_d1 = round(df_filtre["D1"].sum(), 1)
-    total_d2 = round(df_filtre["D2"].sum(), 1)
-    total_d3 = round(df_filtre["D3"].sum(), 1)
-    total_all = round(total_d1 + total_d2 + total_d3, 1)
-    periode_lbl = f"{len(df_filtre)} mois sélectionnés"
-
-    st.markdown(f'<div class="stitle">Cumul décades — {periode_lbl}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stitle">Cumul décades — {periode_lbl}</div>', unsafe_allow_html=True)
+        
+        kc1, kc2, kc3 = st.columns(3)
         with kc1:
             pct1 = round(total_d1 / total_all * 100, 1) if total_all > 0 else 0
-            st.markdown(f"""
-            <div class="vkcard d1">
-              <div class="vkcard-lbl">Décade 1 — J1 à J10</div>
-              <div class="vkcard-dec d1">D1</div>
-              <div class="vkcard-val d1">{fmt(total_d1)}<span class="vkcard-unit">{unit}</span></div>
-              <div class="vkcard-sub">{pct1}% du total · {len(df_filtre)} mois</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="vkcard d1"><div class="vkcard-lbl">Décade 1</div><div class="vkcard-val d1">{fmt(total_d1)}<span class="vkcard-unit">{unit}</span></div><div class="vkcard-sub">{pct1}% du total</div></div>', unsafe_allow_html=True)
         with kc2:
             pct2 = round(total_d2 / total_all * 100, 1) if total_all > 0 else 0
-            st.markdown(f"""
-            <div class="vkcard d2">
-              <div class="vkcard-lbl">Décade 2 — J11 à J20</div>
-              <div class="vkcard-dec d2">D2</div>
-              <div class="vkcard-val d2">{fmt(total_d2)}<span class="vkcard-unit">{unit}</span></div>
-              <div class="vkcard-sub">{pct2}% du total · {len(df_filtre)} mois</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="vkcard d2"><div class="vkcard-lbl">Décade 2</div><div class="vkcard-val d2">{fmt(total_d2)}<span class="vkcard-unit">{unit}</span></div><div class="vkcard-sub">{pct2}% du total</div></div>', unsafe_allow_html=True)
         with kc3:
             pct3 = round(total_d3 / total_all * 100, 1) if total_all > 0 else 0
-            st.markdown(f"""
-            <div class="vkcard d3">
-              <div class="vkcard-lbl">Décade 3 — J21 à fin</div>
-              <div class="vkcard-dec d3">D3</div>
-              <div class="vkcard-val d3">{fmt(total_d3)}<span class="vkcard-unit">{unit}</span></div>
-              <div class="vkcard-sub">{pct3}% du total · {len(df_filtre)} mois</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="vkcard d3"><div class="vkcard-lbl">Décade 3</div><div class="vkcard-val d3">{fmt(total_d3)}<span class="vkcard-unit">{unit}</span></div><div class="vkcard-sub">{pct3}% du total</div></div>', unsafe_allow_html=True)
 
-        st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
+        # 5. Tableau des données
+        st.markdown('<div class="stitle blue">Détails du Pipeline</div>', unsafe_allow_html=True)
+        st.dataframe(df_filtre, use_container_width=True, hide_index=True)
 
-        # ── Tableau des 5 colonnes ──
-        st.markdown('<div class="stitle blue">Tableau — Mois · D1 · D2 · D3 · Statut Planif</div>', unsafe_allow_html=True)
-
-        rows_html = ""
-        for _, row in df_filtre.iterrows():
-            sb = status_badge(row.get("Status", ""))
-            rows_html += f"""
-            <tr>
-              <td class="mono">{row['Mois']}</td>
-              <td class="center green-val">{fmt(row['D1'])}</td>
-              <td class="center blue-val">{fmt(row['D2'])}</td>
-              <td class="center orange-val">{fmt(row['D3'])}</td>
-              <td class="center">{sb}</td>
-            </tr>"""
-
-        # Ligne total
-        rows_html += f"""
-        <tr class="total-row">
-          <td class="mono">▶ TOTAL ({len(df_filtre)} mois)</td>
-          <td class="center green-val">{fmt(total_d1)}</td>
-          <td class="center blue-val">{fmt(total_d2)}</td>
-          <td class="center orange-val">{fmt(total_d3)}</td>
-          <td class="center"><span class="status-pill neutral">{fmt(total_all)} {unit}</span></td>
-        </tr>"""
-
-        st.markdown(f"""
-        <div class="vtable-wrap">
-          <table class="vtable">
-            <thead>
-              <tr>
-                <th>Mois</th>
-                <th class="center">D1 — {unit}</th>
-                <th class="center">D2 — {unit}</th>
-                <th class="center">D3 — {unit}</th>
-                <th class="center">Statut Planif</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows_html}
-            </tbody>
-          </table>
-        </div>""", unsafe_allow_html=True)
-
-        # ── Graphique barres D1/D2/D3 par mois ──
-        st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
-        st.markdown('<div class="stitle orange">Répartition D1 · D2 · D3 par mois</div>', unsafe_allow_html=True)
-
-        if len(df_filtre) > 0:
-            fig_v = go.Figure()
-            fig_v.add_trace(go.Bar(
-                name="D1", x=df_filtre["Mois"], y=df_filtre["D1"],
-                marker_color="#00843D", opacity=.85,
-                hovertemplate='<b>%{x}</b><br>D1: %{y:.1f} ' + unit + '<extra></extra>'
-            ))
-            fig_v.add_trace(go.Bar(
-                name="D2", x=df_filtre["Mois"], y=df_filtre["D2"],
-                marker_color="#1565C0", opacity=.85,
-                hovertemplate='<b>%{x}</b><br>D2: %{y:.1f} ' + unit + '<extra></extra>'
-            ))
-            fig_v.add_trace(go.Bar(
-                name="D3", x=df_filtre["Mois"], y=df_filtre["D3"],
-                marker_color="#C05A00", opacity=.85,
-                hovertemplate='<b>%{x}</b><br>D3: %{y:.1f} ' + unit + '<extra></extra>'
-            ))
-            lyt_v = dict(**PL)
-            lyt_v["barmode"]  = "group"
-            lyt_v["height"]   = 380
-            lyt_v["title"]    = dict(text=f"Ventes par décade ({unit})", font=dict(size=13, color="#4A5568"))
-            lyt_v["bargap"]   = 0.25
-            lyt_v["bargroupgap"] = 0.08
-            fig_v.update_layout(**lyt_v)
-            st.plotly_chart(fig_v, use_container_width=True)
-
-        # ── Analyse IA narrative ──
-        st.markdown('<div class="stitle purple">Analyse IA — Synthèse Pipeline des Ventes</div>', unsafe_allow_html=True)
-
-        cached_analyse = st.session_state.get("ventes_analyse", "")
-        btn_col1, btn_col2, _ = st.columns([1, 1, 3])
-        with btn_col1:
-            gen_btn = st.button("🤖 Générer l'analyse IA", key="ventes_gen_ai", type="primary")
-        with btn_col2:
-            if cached_analyse:
-                if st.button("🔄 Régénérer", key="ventes_regen_ai"):
-                    cached_analyse = ""
-                    st.session_state["ventes_analyse"] = ""
-
-        if gen_btn or (not cached_analyse and gen_btn):
-            with st.spinner("🤖 L'IA analyse vos données de ventes…"):
-                try:
-                    analyse = llm_analyse_ventes(df_filtre, unit)
-                    st.session_state["ventes_analyse"] = analyse
-                    cached_analyse = analyse
-                    # Mettre à jour le cache
-                    save_ventes_cache({
-                        "df": ventes_df, "mapping": mapping,
-                        "filename": st.session_state["ventes_name"],
-                        "analyse": analyse
-                    })
-                except Exception as ex:
-                    st.error(f"Erreur analyse IA : {ex}")
-
-        if cached_analyse:
-            st.markdown(f"""
-            <div class="ai-analysis-card">
-              <div class="ai-analysis-title">
-                🤖 Analyse IA — Pipeline des Ventes
-                <span class="ai-badge"><span class="ai-badge-dot"></span>Claude</span>
-              </div>
-              <div class="ai-analysis-body">
-                <p>{cached_analyse}</p>
-              </div>
-            </div>""", unsafe_allow_html=True)
+        # 6. Graphique
+        st.markdown('<div class="stitle orange">Répartition par mois</div>', unsafe_allow_html=True)
+        fig_v = go.Figure()
+        for d, c in [("D1","#00843D"), ("D2","#1565C0"), ("D3","#C05A00")]:
+            fig_v.add_trace(go.Bar(name=d, x=df_filtre[col_temporelle], y=df_filtre[d], marker_color=c))
+        fig_v.update_layout(**PL, barmode='group', height=350)
+        st.plotly_chart(fig_v, use_container_width=True)
 
     else:
-        # ── Placeholder si pas de données ──
+        # Placeholder si pas de données
         st.markdown("""
         <div class="ph-card">
           <h2>📊 Pipeline des Ventes</h2>
-          <p>Chargez un fichier Excel ci-dessus.<br/>
-          L'IA détecte automatiquement les colonnes Mois, D1, D2, D3 et Statut Planification,
-          même si leurs noms changent d'un fichier à l'autre.</p>
-          <div class="ph-badge-g">IA INTÉGRÉE — DÉTECTION AUTOMATIQUE</div>
+          <p>Chargez un fichier Excel ci-dessus pour activer l'analyse IA.</p>
+          <div class="ph-badge-g">EN ATTENTE DE DONNÉES</div>
         </div>""", unsafe_allow_html=True)
 
 elif page=="navires":
     st.markdown("""<div class="ph-card"><h2>Export Navire</h2>
-    <p>Ce module permettra de planifier et suivre les chargements navires, les escales et les volumes exportés.</p>
+    <p>Ce module permettra de planifier les chargements navires.</p>
     <div class="ph-badge-b">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
