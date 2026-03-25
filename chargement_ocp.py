@@ -1445,24 +1445,6 @@ elif page=="stock":
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGES PLACEHOLDER
-# ══════════════════════════════════════════════════════════════════════════════
-"""
-=============================================================
-PAGE : PIPELINE DES VENTES
-À COLLER dans votre fichier principal, remplacer le bloc :
-  elif page=="ventes":
-      st.markdown(...)
-=============================================================
-DÉPENDANCES SUPPLÉMENTAIRES :
-  pip install anthropic
-=============================================================
-"""
-
-# ─── Remplacez le bloc `elif page=="ventes":` par ce qui suit ───
-
 elif page=="ventes":
     import json as _json
     import anthropic as _anthropic
