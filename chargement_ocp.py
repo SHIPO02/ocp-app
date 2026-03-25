@@ -1240,7 +1240,7 @@ elif page=="ventes":
                 st.session_state["ventes_mapping"] = new_map
                 st.rerun()
 
-        # ─── 4. LOGIQUE DE FILTRAGE MULTI-CRITÈRES ────────────────────────
+       # ─── 4. LOGIQUE DE FILTRAGE (STATUT + SITE + CONF + MOIS) ────────
         col_statut = vmap.get("status")
         col_site = vmap.get("site")
         col_conf = vmap.get("conf")
@@ -1248,37 +1248,43 @@ elif page=="ventes":
         
         df_f = df_raw.copy()
 
-        # A. Filtre de sécurité Statut (Nommée, Rade, En cours)
+        # A. Filtre de sécurité Statut (Version Ultra-Souple)
         if col_statut:
-            statuts_ok = ["nommée", "nommee", "en rade", "rade", "en cours de chargement", "en cours"]
-            df_f = df_f[df_f[col_statut].astype(str).str.lower().str.strip().isin(statuts_ok)]
+            # On définit les mots clés à chercher
+            mots_cles = ["nomm", "rade", "cours", "charg"]
+            
+            # On filtre : on garde la ligne si l'un des mots clés est présent dans la cellule
+            def verif_statut(val):
+                s = str(val).lower()
+                return any(m in s for m in mots_cles)
+            
+            df_f = df_f[df_f[col_statut].apply(verif_statut)]
 
-        # B. Barre d'outils des Filtres (Mois, Site, Confirmation)
+        # B. Barre d'outils des Filtres
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         fc1, fc2, fc3 = st.columns(3)
         
         sel_mois = "Tous"
-        if col_mois:
+        if col_mois and not df_f.empty:
             mois_dispos = ["Tous"] + sorted(df_f[col_mois].dropna().unique().tolist())
             sel_mois = fc1.selectbox("📅 Mois", mois_dispos)
             if sel_mois != "Tous":
                 df_f = df_f[df_f[col_mois] == sel_mois]
 
         sel_site = "Tous"
-        if col_site:
+        if col_site and not df_f.empty:
             sites_dispos = ["Tous"] + sorted(df_f[col_site].dropna().unique().tolist())
             sel_site = fc2.selectbox("📍 Port / Site", sites_dispos)
             if sel_site != "Tous":
                 df_f = df_f[df_f[col_site] == sel_site]
 
         sel_conf = "Tous"
-        if col_conf:
+        if col_conf and not df_f.empty:
             conf_dispos = ["Tous"] + sorted(df_f[col_conf].dropna().unique().tolist())
             sel_conf = fc3.selectbox("✅ Confirmation", conf_dispos)
             if sel_conf != "Tous":
                 df_f = df_f[df_f[col_conf] == sel_conf]
         st.markdown('</div>', unsafe_allow_html=True)
-
         # ─── 5. AFFICHAGE DES RÉSULTATS ───────────────────────────────────
         st.markdown(f'<div class="stitle orange">Analyse : {sel_mois} | {sel_site} | {sel_conf}</div>', unsafe_allow_html=True)
         
