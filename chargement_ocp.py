@@ -1182,34 +1182,86 @@ elif page=="stock":
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
-if file_v and st.button("🪄 Analyser avec l'IA"):
-            with st.spinner("Lecture complète des données..."):
-                raw_v, eng_v = read_bytes(file_v)
-                
-                # IMPORTANT : On charge l'onglet sans aucune restriction de lignes
-                # eng_v est détecté automatiquement (openpyxl lit tout, même le masqué)
-                df_v = pd.read_excel(io.BytesIO(raw_v), sheet_name=0) 
-                
-                # Nettoyage minimal : on enlève juste les lignes 100% vides
-                df_v = df_v.dropna(how="all") 
-                
-                # Échantillon pour l'IA (on prend 20 lignes au hasard pour plus de contexte)
-                sample = df_v.sample(min(20, len(df_v))).astype(str).to_string()
-                
-                prompt = f"""
-                Analyse ces colonnes d'un fichier OCP qui peut contenir des données masquées.
-                Données : {sample}
-                Trouve les colonnes pour : mois, d1, d2, d3, status, site, conf.
-                Réponds UNIQUEMENT en JSON.
-                """
-                
-                # Appel IA Gemini
-                response = model.generate_content(prompt)
-                mapping = _json.loads(response.text.replace("```json","").replace("```","").strip())
-                
-                st.session_state["ventes_df"] = df_v
-                st.session_state["ventes_mapping"] = mapping
+elif page=="ventes":
+    # --- 1. FONCTION DE NETTOYAGE ---
+    def clean_numeric_v(series):
+        return pd.to_numeric(series, errors='coerce').fillna(0)
 
+    st.markdown('<div class="stitle">Pipeline des Ventes — Lecture Complète</div>', unsafe_allow_html=True)
+    
+    file_v = st.file_uploader("Charger Excel (toutes données incluses)", type=EXCEL_T)
+
+    if file_v:
+        try:
+            # On lit le fichier brut
+            raw_v, eng_v = read_bytes(file_v)
+            
+            # IMPORTANT : On charge sans filtres et on force la lecture de toutes les lignes
+            # On prend l'onglet "January" ou le premier
+            xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
+            target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
+            
+            # Lecture du DataFrame : Pandas ignore naturellement les filtres Excel
+            df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
+            
+            # Nettoyage des noms de colonnes
+            df_full.columns = [str(c).strip() for c in df_full.columns]
+            
+            # On garde les données en mémoire
+            st.session_state["ventes_df"] = df_full
+            st.success(f"✅ {len(df_full)} lignes importées (filtres Excel ignorés)")
+            
+        except Exception as e:
+            st.error(f"Erreur : {e}")
+
+    # --- 2. LOGIQUE D'AFFICHAGE ET FILTRAGE INTERNE ---
+    df_raw = st.session_state.get("ventes_df")
+    vmap = st.session_state.get("ventes_mapping", {})
+
+    if df_raw is not None:
+        # Expander de Mapping (indispensable pour savoir où sont les colonnes)
+        with st.expander("⚙️ Mapper les colonnes (Même si filtré dans Excel)"):
+            new_map = {}
+            roles = {"mois":"Mois", "d1":"D1", "d2":"D2", "d3":"D3", "status":"Statut", "site":"Site", "conf":"Confirmation"}
+            cols_m = st.columns(4)
+            for i, (rk, rl) in enumerate(roles.items()):
+                opts = ["(non mappé)"] + df_raw.columns.tolist()
+                curr = vmap.get(rk)
+                with cols_m[i%4]:
+                    sel = st.selectbox(f"{rl}", opts, index=opts.index(curr) if curr in opts else 0, key=f"v_{rk}")
+                    new_map[rk] = sel if sel != "(non mappé)" else None
+            if st.button("🚀 Appliquer"):
+                st.session_state["ventes_mapping"] = new_map
+                st.rerun()
+
+        # --- FILTRAGE DANS STREAMLIT (Nommée, Rade, Chargement) ---
+        c_status = vmap.get("status")
+        c_conf = vmap.get("conf")
+        
+        df_f = df_raw.copy()
+
+        # On applique le filtre métier OCP sur le Statut Planif
+        if c_status:
+            mots_cles = ["nomm", "rade", "cours", "charg"]
+            df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
+
+        # --- NOUVEAUTÉ : Filtre dynamique sur la Confirmation (CONF, Res.CAPA, etc.) ---
+        st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+        if c_conf:
+            # Ici on récupère TOUTES les valeurs uniques de ta colonne Confirmation (voir ton image)
+            conf_list = ["Tous"] + sorted(df_raw[c_conf].dropna().unique().tolist())
+            sel_conf = st.selectbox("🎯 Filtrer par Confirmation (Fichier complet)", conf_list)
+            if sel_conf != "Tous":
+                df_f = df_f[df_f[c_conf] == sel_conf]
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Affichage des volumes
+        t1 = clean_numeric_v(df_f[vmap["d1"]]).sum() if vmap.get("d1") else 0
+        t2 = clean_numeric_v(df_f[vmap["d2"]]).sum() if vmap.get("d2") else 0
+        t3 = clean_numeric_v(df_f[vmap["d3"]]).sum() if vmap.get("d3") else 0
+        
+        st.metric("Total Filtré (KT)", f"{round(t1+t2+t3, 1)}")
+        st.dataframe(df_f, use_container_width=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
