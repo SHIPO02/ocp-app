@@ -1917,14 +1917,16 @@ with st.container():
             )
         else:
             mois_choisis = tous_mois
-    st.markdown('</div>', unsafe_allow_html=True)
-        # Filtrer
-        df_filtre = ventes_df[ventes_df["Mois"].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
+  st.markdown('</div>', unsafe_allow_html=True) # Ligne 1920
 
-        # ── KPI Cards — Totaux décades ──
-        total_d1    = round(df_filtre["D1"].sum(), 1)
-        total_d2    = round(df_filtre["D2"].sum(), 1)
-        total_d3    = round(df_filtre["D3"].sum(), 1)
+# --- Aligne ces lignes exactement sous le 's' de 'st.markdown' ---
+# Filtrer (Pas d'espaces en trop ici !)
+df_filtre = ventes_df[ventes_df[col_temporelle].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
+
+# --- KPI Cards - Totaux décades ---
+total_d1 = round(df_filtre["D1"].sum(), 1)
+total_d2 = round(df_filtre["D2"].sum(), 1)
+total_d3 = round(df_filtre["D3"].sum(), 1)
         total_all   = round(total_d1 + total_d2 + total_d3, 1)
         periode_lbl = f"{len(df_filtre)} mois sélectionnés"
 
