@@ -1485,33 +1485,59 @@ elif page=="ventes":
         st.markdown('<div class="upload-zone">', unsafe_allow_html=True)
         f_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T, key="v_up")
         if f_v and st.button("🚀 Lancer l'Analyse IA"):
-            with st.spinner("L'IA analyse votre fichier..."):
+           with st.spinner("L'IA analyse votre fichier..."):
                 raw_v = f_v.read()
                 sheets, _, _ = read_excel_raw(raw_v, f_v.name)
-                sample = "\n".join([f"Feuille: {k}\n{df_to_text_sample(v, 8)}" for k, v in list(sheets.items())[:3]])
-                prompt = f"Analyse cet Excel OCP et retourne UNIQUEMENT un JSON avec: sheet, header_row, month_col, d1_col, d2_col, d3_col, status_col, unit.\n{sample}"
-                res = model.generate_content(prompt)
-                mapping = _json.loads(res.text.replace("```json","").replace("```","").strip())
-                st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, f_v.name, mapping)
-        st.markdown('</div>', unsafe_allow_html=True)
+                
+                # --- CORRECTION : Réduction de l'échantillon pour éviter InvalidArgument ---
+                sample_parts = []
+                for k, v in list(sheets.items())[:3]:
+                    # On ne prend que les 10 premières lignes et 15 premières colonnes max
+                    v_small = v.iloc[:10, :15].astype(str)
+                    sample_parts.append(f"Feuille: {k}\n{df_to_text_sample(v_small, 8)}")
+                sample_text = "\n".join(sample_parts)
 
-    # --- AFFICHAGE DES RÉSULTATS ---
+                prompt = f"""Tu es un expert OCP Manufacturing. Analyse cet échantillon Excel et retourne UNIQUEMENT un JSON strict.
+                Clés requises : sheet, header_row (index 0), month_col, d1_col, d2_col, d3_col, status_col, unit.
+                Données :
+                {sample_text}"""
+                
+                try:
+                    res = model.generate_content(prompt)
+                    # Nettoyage rigoureux de la réponse JSON
+                    json_str = res.text.replace("```json", "").replace("```", "").strip()
+                    mapping = _json.loads(json_str)
+                    st.session_state["ventes_mapping"] = mapping
+                    st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, f_v.name, mapping)
+                except Exception as e:
+                    st.error(f"Erreur d'analyse IA : {e}")
+
+    # --- AFFICHAGE DES RÉSULTATS (Alignement et Sécurité) ---
     v_df = st.session_state.get("ventes_df")
     if v_df is not None:
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
+        
+        # Sécurisation des noms de colonnes pour les filtres
+        mois_col = "Mois" if "Mois" in v_df.columns else v_df.columns[0]
+        stat_col = "Status" if "Status" in v_df.columns else v_df.columns[-1]
+
         site = c1.selectbox("📍 Filtrer par Site", ["Tous", "Jorf", "Safi"])
-        mois = c2.selectbox("📅 Filtrer par Mois", ["Tous"] + v_df["Mois"].unique().tolist())
-        stat = c3.selectbox("✅ Statut Confirmation", ["Tous"] + sorted(v_df["Status"].unique().tolist()))
+        mois = c2.selectbox("📅 Filtrer par Mois", ["Tous"] + sorted(v_df[mois_col].unique().tolist()))
+        stat = c3.selectbox("✅ Statut Confirmation", ["Tous"] + sorted(v_df[stat_col].unique().tolist()))
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # Application des filtres sur une copie
         df_f = v_df.copy()
-        if site != "Tous": df_f = df_f[df_f["Raw"].str.contains(site, case=False)]
-        if mois != "Tous": df_f = df_f[df_f["Mois"] == mois]
-        if stat != "Tous": df_f = df_f[df_f["Status"] == stat]
+        if site != "Tous": 
+            df_f = df_f[df_f["Raw"].str.contains(site, case=False, na=False)]
+        if mois != "Tous": 
+            df_f = df_f[df_f[mois_col] == mois]
+        if stat != "Tous": 
+            df_f = df_f[df_f[stat_col] == stat]
 
-        st.metric("Volume Total", f"{round(df_f['Total'].sum(), 1)} KT")
-        st.dataframe(df_f.drop(columns=["Raw"]), use_container_width=True, hide_index=True)
+        st.metric("Volume Total Filtré", f"{round(df_f['Total'].sum(), 1)} KT")
+        st.dataframe(df_f.drop(columns=["Raw"], errors="ignore"), use_container_width=True, hide_index=True)
 elif page=="navires":
     st.markdown("""<div class="ph-card"><h2>Export Navire</h2>
     <p>Ce module permettra de planifier les chargements navires.</p>
