@@ -1182,135 +1182,33 @@ elif page=="stock":
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
-elif page=="ventes":
-    # ─── 1. INITIALISATION ────────────────────────────────────────────────
-    if "ventes_df" not in st.session_state:
-        st.session_state["ventes_df"] = None
-        st.session_state["ventes_mapping"] = {}
-
-    def clean_numeric_v(series):
-        """Nettoie et convertit les données Excel en nombres (KT)"""
-        return pd.to_numeric(series, errors='coerce').fillna(0)
-
-    st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage Complet</div>', unsafe_allow_html=True)
-    
-    # ─── 2. ZONE DE CHARGEMENT ────────────────────────────────────────────
-    with st.container():
-        st.markdown('<div class="ventes-upload">', unsafe_allow_html=True)
-        file_v = st.file_uploader("Charger le fichier Pipeline Excel", type=EXCEL_T, key="v_up")
-        
-        if file_v:
-            try:
+if file_v and st.button("🪄 Analyser avec l'IA"):
+            with st.spinner("Lecture complète des données..."):
                 raw_v, eng_v = read_bytes(file_v)
-                xl = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
-                # Choix de l'onglet (par défaut le premier ou January)
-                target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
-                df_load = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
-                df_load.columns = [str(c).strip() for c in df_load.columns]
                 
-                st.session_state["ventes_df"] = df_load
-                st.session_state["ventes_name"] = file_v.name
-                st.success(f"✅ Données chargées avec succès.")
-            except Exception as ex:
-                st.error(f"Erreur : {ex}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ─── 3. CONFIGURATION DU MAPPING ──────────────────────────────────────
-    df_raw = st.session_state.get("ventes_df")
-    vmap = st.session_state.get("ventes_mapping", {})
-
-    if df_raw is not None:
-        with st.expander("⚙️ CONFIGURATION DU MAPPING", expanded=not vmap):
-            new_map = {}
-            c_cols = st.columns(4)
-            roles = {
-                "mois": "Colonne Mois", "d1": "D1 (J1-10)", "d2": "D2 (J11-20)", 
-                "d3": "D3 (J21-fin)", "status": "Statut Planif", "site": "Site / Port",
-                "conf": "Confirmation"
-            }
-            for i, (rk, rl) in enumerate(roles.items()):
-                opts = ["(non mappé)"] + df_raw.columns.tolist()
-                curr = vmap.get(rk)
-                idx = opts.index(curr) if curr in opts else 0
-                with c_cols[i % 4]:
-                    sel = st.selectbox(f"{rl}", opts, index=idx, key=f"m_fin_{rk}")
-                    new_map[rk] = sel if sel != "(non mappé)" else None
-            
-            if st.button("🚀 Valider la configuration"):
-                st.session_state["ventes_mapping"] = new_map
-                st.rerun()
-
-       # ─── 4. LOGIQUE DE FILTRAGE (STATUT + SITE + CONF + MOIS) ────────
-        col_statut = vmap.get("status")
-        col_site = vmap.get("site")
-        col_conf = vmap.get("conf")
-        col_mois = vmap.get("mois")
-        
-        df_f = df_raw.copy()
-
-        # A. Filtre de sécurité Statut (Version Ultra-Souple)
-        if col_statut:
-            # On définit les mots clés à chercher
-            mots_cles = ["nomm", "rade", "cours", "charg"]
-            
-            # On filtre : on garde la ligne si l'un des mots clés est présent dans la cellule
-            def verif_statut(val):
-                s = str(val).lower()
-                return any(m in s for m in mots_cles)
-            
-            df_f = df_f[df_f[col_statut].apply(verif_statut)]
-
-        # B. Barre d'outils des Filtres
-        st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
-        fc1, fc2, fc3 = st.columns(3)
-        
-        sel_mois = "Tous"
-        if col_mois and not df_f.empty:
-            mois_dispos = ["Tous"] + sorted(df_f[col_mois].dropna().unique().tolist())
-            sel_mois = fc1.selectbox("📅 Mois", mois_dispos)
-            if sel_mois != "Tous":
-                df_f = df_f[df_f[col_mois] == sel_mois]
-
-        sel_site = "Tous"
-        if col_site and not df_f.empty:
-            sites_dispos = ["Tous"] + sorted(df_f[col_site].dropna().unique().tolist())
-            sel_site = fc2.selectbox("📍 Port / Site", sites_dispos)
-            if sel_site != "Tous":
-                df_f = df_f[df_f[col_site] == sel_site]
-
-        sel_conf = "Tous"
-        if col_conf and not df_f.empty:
-            conf_dispos = ["Tous"] + sorted(df_f[col_conf].dropna().unique().tolist())
-            sel_conf = fc3.selectbox("✅ Confirmation", conf_dispos)
-            if sel_conf != "Tous":
-                df_f = df_f[df_f[col_conf] == sel_conf]
-        st.markdown('</div>', unsafe_allow_html=True)
-        # ─── 5. AFFICHAGE DES RÉSULTATS ───────────────────────────────────
-        st.markdown(f'<div class="stitle orange">Analyse : {sel_mois} | {sel_site} | {sel_conf}</div>', unsafe_allow_html=True)
-        
-        t1 = round(clean_numeric_v(df_f[vmap["d1"]]).sum(), 1) if vmap.get("d1") else 0.0
-        t2 = round(clean_numeric_v(df_f[vmap["d2"]]).sum(), 1) if vmap.get("d2") else 0.0
-        t3 = round(clean_numeric_v(df_f[vmap["d3"]]).sum(), 1) if vmap.get("d3") else 0.0
-        tall = round(t1 + t2 + t3, 1)
-
-        k1, k2, k3 = st.columns(3)
-        with k1: st.markdown(f'<div class="dcard d1c"><div class="dcard-label">D1 (KT)</div><div class="dcard-val d1c">{fmt(t1)}</div></div>', unsafe_allow_html=True)
-        with k2: st.markdown(f'<div class="dcard d2c"><div class="dcard-label">D2 (KT)</div><div class="dcard-val d2c">{fmt(t2)}</div></div>', unsafe_allow_html=True)
-        with k3: st.markdown(f'<div class="dcard d3c"><div class="dcard-label">D3 (KT)</div><div class="dcard-val d3c">{fmt(t3)}</div></div>', unsafe_allow_html=True)
-
-        st.markdown(f"""<div style="background:white; border:2px solid #00843D; padding:15px; border-radius:10px; margin-top:10px; display:flex; justify-content:space-between; align-items:center">
-            <span style="font-weight:700; color:#4A5568">▶ TOTAL CUMULÉ DU PÉRIMITRE</span>
-            <span style="font-size:26px; font-weight:800; color:#00843D">{fmt(tall)} KT</span>
-        </div>""", unsafe_allow_html=True)
-
-        # Tableau final
-        st.markdown('<div class="stitle">Détail des navires</div>', unsafe_allow_html=True)
-        cols_affichage = [v for v in vmap.values() if v and v in df_f.columns]
-        
-        if not df_f.empty:
-            st.dataframe(df_f[cols_affichage], use_container_width=True, hide_index=True)
-        else:
-            st.info("Aucune donnée trouvée pour ces filtres.")
+                # IMPORTANT : On charge l'onglet sans aucune restriction de lignes
+                # eng_v est détecté automatiquement (openpyxl lit tout, même le masqué)
+                df_v = pd.read_excel(io.BytesIO(raw_v), sheet_name=0) 
+                
+                # Nettoyage minimal : on enlève juste les lignes 100% vides
+                df_v = df_v.dropna(how="all") 
+                
+                # Échantillon pour l'IA (on prend 20 lignes au hasard pour plus de contexte)
+                sample = df_v.sample(min(20, len(df_v))).astype(str).to_string()
+                
+                prompt = f"""
+                Analyse ces colonnes d'un fichier OCP qui peut contenir des données masquées.
+                Données : {sample}
+                Trouve les colonnes pour : mois, d1, d2, d3, status, site, conf.
+                Réponds UNIQUEMENT en JSON.
+                """
+                
+                # Appel IA Gemini
+                response = model.generate_content(prompt)
+                mapping = _json.loads(response.text.replace("```json","").replace("```","").strip())
+                
+                st.session_state["ventes_df"] = df_v
+                st.session_state["ventes_mapping"] = mapping
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
