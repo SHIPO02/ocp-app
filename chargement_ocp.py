@@ -1871,28 +1871,33 @@ Réponds directement avec le texte de l'analyse, sans titre, sans bullet points,
     ventes_df = st.session_state.get("ventes_df")
     unit = mapping.get("unit", "KT") if mapping else "KT"
 
-    if ventes_df is not None and not ventes_df.empty:
+   # --- LIGNE 1874 ---
+if ventes_df is not None and not ventes_df.empty:
+    # TOUT CE QUI SUIT DOIT ÊTRE DÉCALÉ (4 ESPACES)
+    st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
 
-      # ── Filtre par mois (CORRIGÉ) ──
-st.markdown('<div class="stitle">Filtrage par mois</div>', unsafe_allow_html=True)
+    # Détection automatique de la colonne temporelle
+    col_temporelle = None
+    options_possibles = ["Mois", "Month", "Période", "Period"]
 
-# Détection automatique de la colonne temporelle (Mois, Month, Période...)
-col_temporelle = None
-options_possibles = ["Mois", "Month", "Période", "Period", "Période planif"]
+    mapping_ia = st.session_state.get("ventes_mapping", {}).get("month_col")
+    if mapping_ia in ventes_df.columns:
+        col_temporelle = mapping_ia
+    else:
+        for c in ventes_df.columns:
+            if any(key.lower() in str(c).lower() for key in options_possibles):
+                col_temporelle = c
+                break
 
-# 1. On teste d'abord ce que l'IA a trouvé
-mapping_ia = st.session_state.get("ventes_mapping", {}).get("month_col")
-if mapping_ia in ventes_df.columns:
-    col_temporelle = mapping_ia
-# 2. Sinon, on cherche manuellement dans le tableau
-else:
-    for c in ventes_df.columns:
-        if any(key.lower() in str(c).lower() for key in options_possibles):
-            col_temporelle = c
-            break
+    if col_temporelle:
+        tous_mois = ventes_df[col_temporelle].unique().tolist()
+    else:
+        tous_mois = ventes_df.iloc[:, 0].unique().tolist()
 
-# 3. On extrait les données ou on utilise la 1ère colonne en dernier recours
-if col_temporelle:
+    with st.container():
+        # Continue de décaler tout le reste du bloc "with" également...
+        st.markdown('<div class="filter-panel">...</div>', unsafe_allow_html=True)
+        # etc...
     tous_mois = ventes_df[col_temporelle].unique().tolist()
 else:
     tous_mois = ventes_df.iloc[:, 0].unique().tolist()
