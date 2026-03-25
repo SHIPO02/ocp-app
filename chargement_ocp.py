@@ -1184,242 +1184,128 @@ elif page=="stock":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE : PIPELINE DES VENTES
+# PAGE : PIPELINE DES VENTES (CORRIGÉ)
 # ══════════════════════════════════════════════════════════════════════════════
 elif page=="ventes":
-    import anthropic as _anthropic_lib
+    import google.generativeai as _genai  # Utilisation de Gemini comme tes Secrets
     import json as _json
 
     # ─── Session state ventes ──────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
-        st.session_state["ventes_df"]      = None
-        st.session_state["ventes_name"]    = ""
+        st.session_state["ventes_df"] = None
+        st.session_state["ventes_name"] = ""
         st.session_state["ventes_mapping"] = {}
 
-    # ─── Fonction LLM détection colonnes ──────────────────────────────────
+    # ─── Configuration IA Gemini ──────────────────────────────────────────
+    try:
+        api_key_v = st.secrets["GEMINI_API_KEY"]
+        _genai.configure(api_key=api_key_v)
+        model_v = _genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error("🔑 Erreur API : Vérifiez 'GEMINI_API_KEY' dans les Secrets.")
+        st.stop()
+
     def detect_columns_llm_v(colonnes):
-        prompt = f"""Tu es un assistant expert en données industrielles OCP.
-Voici les colonnes d'un fichier Excel de pipeline de ventes :
-{colonnes}
-
-Identifie quelle colonne correspond à chacun de ces 7 rôles :
-1. mois          — mois physique ou de livraison (Physical Month, Mois, Month...)
-2. d1            — quantité/livraison 1ère décade J1-J10 (D1, Decade 1, Dec1...)
-3. d2            — quantité/livraison 2ème décade J11-J20 (D2, Decade 2, Dec2...)
-4. d3            — quantité/livraison 3ème décade J21-fin (D3, Decade 3, Dec3...)
-5. status_planif — statut planification (Status Planif, Statut, Status, Chargé...)
-6. confirmation  — confirmation commande (Confirmation, Confirmed, Conf...)
-7. site          — site/port (Site, Port, Loading Port, Jorf, Safi...)
-
-Réponds UNIQUEMENT avec JSON valide (pas de markdown) :
-{{"mois":null,"d1":null,"d2":null,"d3":null,"status_planif":null,"confirmation":null,"site":null}}
-Utilise null si aucune colonne ne correspond. Utilise UNIQUEMENT les noms exacts de la liste."""
+        prompt = f"""Analyse ces colonnes Excel OCP et retourne UNIQUEMENT un JSON avec ces clés exactes:
+        "mois", "d1", "d2", "d3", "status_planif", "confirmation", "site".
+        Colonnes disponibles : {colonnes}"""
         try:
-            client = _anthropic_lib.Anthropic()
-            resp = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=500,
-                messages=[{"role":"user","content":prompt}]
-            )
-            raw = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
-            mapping = _json.loads(raw)
-            return {r: (c if c and c in colonnes else None) for r,c in mapping.items()}
-        except Exception as ex:
-            st.warning(f"LLM indisponible ({ex}), utilisez le mapping manuel.")
-            return {r:None for r in ["mois","d1","d2","d3","status_planif","confirmation","site"]}
+            res = model_v.generate_content(prompt)
+            clean_json = res.text.replace("```json", "").replace("```", "").strip()
+            return _json.loads(clean_json)
+        except:
+            return {r: None for r in ["mois","d1","d2","d3","status_planif","confirmation","site"]}
 
-    # ─── Upload section ─────────────────────────────────────────────────────
+    def clean_numeric_v(series):
+        """Force la conversion en nombre pour éviter le bug '0,0 KT'"""
+        return pd.to_numeric(series, errors='coerce').fillna(0)
+
+    # ─── UI : Chargement ──────────────────────────────────────────────────
     st.markdown('<div class="stitle">Chargement du fichier Ventes</div>', unsafe_allow_html=True)
-    st.markdown('''<div class="ventes-upload">
-    <div class="vu-title">📊 Fichier Pipeline des Ventes</div>
-    <div class="vu-desc">Fichier Excel — colonnes détectées automatiquement par IA (Mois, D1, D2, D3, Status Planif, Confirmation, Site)</div>''', unsafe_allow_html=True)
-
-    file_ventes = st.file_uploader(
-        "Choisir fichier Ventes", type=EXCEL_T,
-        key="ventes_up", label_visibility="collapsed"
-    )
-    vn = st.session_state.get("ventes_name","")
-    if vn: st.success(f"Actif : {vn}")
+    st.markdown('<div class="ventes-upload"><div class="vu-title">📊 Pipeline des Ventes</div>', unsafe_allow_html=True)
+    
+    file_ventes = st.file_uploader("Fichier", type=EXCEL_T, key="v_up", label_visibility="collapsed")
 
     if file_ventes:
         try:
             raw_v, eng_v = read_bytes(file_ventes)
             xl_v = pd.ExcelFile(io.BytesIO(raw_v), engine=eng_v)
-            sheets_v = [s for s in xl_v.sheet_names if is_sheet(s)]
-            if not sheets_v: sheets_v = xl_v.sheet_names
-            if len(sheets_v) > 1:
-                sheet_choice = st.selectbox("Feuille à charger", sheets_v, key="ventes_sheet")
-            else:
-                sheet_choice = sheets_v[0]
-            df_v = pd.read_excel(io.BytesIO(raw_v), sheet_name=sheet_choice, engine=eng_v)
-            df_v = df_v.dropna(axis=1, how="all").dropna(axis=0, how="all")
+            # Priorité à l'onglet "January" ou le premier valide
+            target = "January" if "January" in xl_v.sheet_names else xl_v.sheet_names[0]
+            df_v = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_v.columns = [str(c).strip() for c in df_v.columns]
-            with st.spinner("🤖 Détection des colonnes par IA…"):
-                mapping_v = detect_columns_llm_v(df_v.columns.tolist())
-            st.session_state["ventes_df"]      = df_v
-            st.session_state["ventes_name"]    = file_ventes.name
-            st.session_state["ventes_mapping"] = mapping_v
-            st.success(f"✅ {len(df_v)} lignes chargées — {len(df_v.columns)} colonnes")
+            
+            if st.button("🚀 Analyser avec l'IA", type="primary"):
+                with st.spinner("L'IA analyse la structure..."):
+                    st.session_state["ventes_mapping"] = detect_columns_llm_v(df_v.columns.tolist())
+                    st.session_state["ventes_df"] = df_v
+                    st.session_state["ventes_name"] = file_ventes.name
+                st.rerun()
         except Exception as ex:
-            st.error(f"Erreur : {ex}")
-
+            st.error(f"Erreur lecture : {ex}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ─── Lecture session ────────────────────────────────────────────────────
-    df_v  = st.session_state.get("ventes_df")
-    vmap  = st.session_state.get("ventes_mapping", {})
+    # ─── UI : Affichage et Filtres ────────────────────────────────────────
+    df_raw_v = st.session_state.get("ventes_df")
+    vmap = st.session_state.get("ventes_mapping", {})
 
-    if df_v is not None:
-
-        # ── Badge LLM + Mapping ──────────────────────────────────────────
-        st.markdown('<div class="stitle blue">Mapping des colonnes — IA</div>', unsafe_allow_html=True)
-        st.markdown('<div class="llm-badge">🤖 Claude Sonnet — Détection automatique des colonnes</div>', unsafe_allow_html=True)
-
-        with st.expander("Voir / modifier le mapping des colonnes"):
+    if df_raw_v is not None:
+        st.markdown('<div class="stitle blue">Mapping & Filtres</div>', unsafe_allow_html=True)
+        
+        with st.expander("⚙️ Modifier le mapping des colonnes"):
             new_map = {}
-            all_cols_v = ["(non mappé)"] + df_v.columns.tolist()
-            cols_m = st.columns(4)
-            role_labels_v = {
-                "mois":"Colonne MOIS","d1":"Colonne D1 (J1–10)","d2":"Colonne D2 (J11–20)",
-                "d3":"Colonne D3 (J21–fin)","status_planif":"Colonne STATUS PLANIF",
-                "confirmation":"Colonne CONFIRMATION","site":"Colonne SITE",
-            }
-            for i,(role,label) in enumerate(role_labels_v.items()):
-                current = vmap.get(role)
-                default_idx = all_cols_v.index(current) if current and current in all_cols_v else 0
-                with cols_m[i%4]:
-                    chosen = st.selectbox(label, all_cols_v, index=default_idx, key=f"vmap_{role}")
-                    new_map[role] = chosen if chosen!="(non mappé)" else None
-            if st.button("✅ Appliquer le mapping", type="primary", key="apply_vmap"):
+            c_cols = st.columns(4)
+            roles = {"mois":"Mois", "d1":"D1", "d2":"D2", "d3":"D3", "status_planif":"Statut", "confirmation":"Confirm", "site":"Site"}
+            for i, (rk, rl) in enumerate(roles.items()):
+                curr = vmap.get(rk)
+                opts = ["(non mappé)"] + df_raw_v.columns.tolist()
+                idx = opts.index(curr) if curr in opts else 0
+                with c_cols[i % 4]:
+                    sel = st.selectbox(f"Col. {rl}", opts, index=idx, key=f"sel_{rk}")
+                    new_map[rk] = sel if sel != "(non mappé)" else None
+            if st.button("💾 Appliquer le mapping"):
                 st.session_state["ventes_mapping"] = new_map
-                vmap = new_map
                 st.rerun()
 
-        # ── Filtres ──────────────────────────────────────────────────────
-        st.markdown('<div class="stitle">Filtres</div>', unsafe_allow_html=True)
-        f1,f2,f3 = st.columns(3)
-        col_mois = vmap.get("mois"); col_conf = vmap.get("confirmation"); col_site = vmap.get("site")
+        # Filtrage
+        f1, f2, f3 = st.columns(3)
+        col_mois, col_conf, col_site = vmap.get("mois"), vmap.get("confirmation"), vmap.get("site")
+        
+        df_filt = df_raw_v.copy()
+        if col_mois:
+            m_list = f1.multiselect("Mois", sorted(df_raw_v[col_mois].dropna().unique().tolist()))
+            if m_list: df_filt = df_filt[df_filt[col_mois].isin(m_list)]
+        if col_conf:
+            c_list = f2.multiselect("Confirmation", sorted(df_raw_v[col_conf].dropna().unique().tolist()))
+            if c_list: df_filt = df_filt[df_filt[col_conf].isin(c_list)]
+        if col_site:
+            s_list = f3.multiselect("Site", sorted(df_raw_v[col_site].dropna().unique().tolist()))
+            if s_list: df_filt = df_filt[df_filt[col_site].isin(s_list)]
 
-        with f1:
-            if col_mois and col_mois in df_v.columns:
-                mois_opts = sorted(df_v[col_mois].dropna().astype(str).unique().tolist())
-                sel_mois = st.multiselect("Filtrer par Mois", mois_opts, key="v_fmois")
-            else:
-                sel_mois = []; st.caption("Colonne Mois non mappée")
+        # --- CALCULS (Correction du bug 0.0 KT) ---
+        v_d1 = clean_numeric_v(df_filt[vmap["d1"]]) if vmap.get("d1") else pd.Series([0])
+        v_d2 = clean_numeric_v(df_filt[vmap["d2"]]) if vmap.get("d2") else pd.Series([0])
+        v_d3 = clean_numeric_v(df_filt[vmap["d3"]]) if vmap.get("d3") else pd.Series([0])
+        
+        t1, t2, t3 = round(v_d1.sum(), 1), round(v_d2.sum(), 1), round(v_d3.sum(), 1)
+        tall = round(t1 + t2 + t3, 1)
 
-        with f2:
-            if col_conf and col_conf in df_v.columns:
-                conf_opts = sorted(df_v[col_conf].dropna().astype(str).unique().tolist())
-                sel_conf = st.multiselect("Filtrer par Confirmation", conf_opts, key="v_fconf")
-            else:
-                sel_conf = []; st.caption("Colonne Confirmation non mappée")
-
-        with f3:
-            if col_site and col_site in df_v.columns:
-                site_opts = sorted(df_v[col_site].dropna().astype(str).unique().tolist())
-                sel_site = st.multiselect("Filtrer par Site (Jorf / Safi)", site_opts, key="v_fsite")
-            else:
-                sel_site = []; st.caption("Colonne Site non mappée")
-
-        # ── Appliquer filtres ────────────────────────────────────────────
-        df_filt = df_v.copy()
-        if sel_mois and col_mois and col_mois in df_filt.columns:
-            df_filt = df_filt[df_filt[col_mois].astype(str).isin(sel_mois)]
-        if sel_conf and col_conf and col_conf in df_filt.columns:
-            df_filt = df_filt[df_filt[col_conf].astype(str).isin(sel_conf)]
-        if sel_site and col_site and col_site in df_filt.columns:
-            df_filt = df_filt[df_filt[col_site].astype(str).isin(sel_site)]
-
-        # ── Cards décades ────────────────────────────────────────────────
         st.markdown('<div class="stitle orange">Totaux par Décade</div>', unsafe_allow_html=True)
-        col_d1=vmap.get("d1"); col_d2=vmap.get("d2"); col_d3=vmap.get("d3")
+        dc1, dc2, dc3 = st.columns(3)
+        cards = [(dc1,"d1c","D1",t1), (dc2,"d2c","D2",t2), (dc3,"d3c","D3",t3)]
+        for col, cls, lbl, val in cards:
+            with col:
+                st.markdown(f'<div class="dcard {cls}"><div class="dcard-label">{lbl}</div><div class="dcard-val {cls}">{fmt(val)}<span class="dcard-unit">KT</span></div></div>', unsafe_allow_html=True)
 
-        def _safe_sum(df, col):
-            if col and col in df.columns:
-                return round(pd.to_numeric(df[col], errors="coerce").fillna(0).sum(), 1)
-            return 0.0
-
-        tot_d1=_safe_sum(df_filt,col_d1); tot_d2=_safe_sum(df_filt,col_d2); tot_d3=_safe_sum(df_filt,col_d3)
-        tot_all=round(tot_d1+tot_d2+tot_d3,1)
-
-        dc1,dc2,dc3 = st.columns(3)
-        for col_c,cls,lbl,val,sub in [
-            (dc1,"d1c","D1 — 1ère Décade",tot_d1,"Jours 1 → 10"),
-            (dc2,"d2c","D2 — 2ème Décade",tot_d2,"Jours 11 → 20"),
-            (dc3,"d3c","D3 — 3ème Décade",tot_d3,"Jours 21 → fin"),
-        ]:
-            with col_c:
-                st.markdown(f"""
-                <div class="dcard {cls}">
-                  <div class="dcard-label">{lbl}</div>
-                  <div class="dcard-val {cls}">{fmt(val)}<span class="dcard-unit">KT</span></div>
-                  <div class="dcard-sub">{sub}</div>
-                </div>""", unsafe_allow_html=True)
-
-        st.markdown(f"""
-        <div style="background:var(--white);border:1px solid var(--border);border-radius:10px;
-                    padding:14px 20px;margin-top:10px;display:flex;justify-content:space-between;
-                    align-items:center;box-shadow:var(--sh1)">
-          <span style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;
-                        text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">▶ Total D1 + D2 + D3</span>
-          <span style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;
-                        color:var(--green)">{fmt(tot_all)} <span style="font-size:14px;color:var(--text3);font-weight:500">KT</span></span>
+        st.markdown(f"""<div style="background:white; border:1px solid #E0E4EA; padding:15px; border-radius:10px; margin-top:10px; display:flex; justify-content:space-between; align-items:center">
+            <span style="font-weight:700; color:#4A5568">▶ TOTAL CUMULÉ</span>
+            <span style="font-size:24px; font-weight:800; color:#00843D">{fmt(tall)} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # ── Tableau 7 colonnes ───────────────────────────────────────────
-        st.markdown('<div class="stitle">Tableau des Ventes — 7 colonnes</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:11px;color:#94A3B8;margin-bottom:8px">{len(df_filt)} lignes affichées</div>', unsafe_allow_html=True)
-
-        role_to_header = {
-            "mois":"Mois","d1":"D1 (KT)","d2":"D2 (KT)","d3":"D3 (KT)",
-            "status_planif":"Status Planif","confirmation":"Confirmation","site":"Site",
-        }
-        disp_dict = {}
-        for role,header in role_to_header.items():
-            src = vmap.get(role)
-            if src and src in df_filt.columns:
-                disp_dict[header] = df_filt[src].values
-            else:
-                disp_dict[header] = ["—"]*len(df_filt)
-        df_display = pd.DataFrame(disp_dict)
-        for dc in ["D1 (KT)","D2 (KT)","D3 (KT)"]:
-            df_display[dc] = pd.to_numeric(df_display[dc], errors="coerce")
-
-        total_row = {
-            "Mois":"TOTAL GÉNÉRAL",
-            "D1 (KT)":round(df_display["D1 (KT)"].fillna(0).sum(),3),
-            "D2 (KT)":round(df_display["D2 (KT)"].fillna(0).sum(),3),
-            "D3 (KT)":round(df_display["D3 (KT)"].fillna(0).sum(),3),
-            "Status Planif":"","Confirmation":"","Site":"",
-        }
-        df_with_total = pd.concat([df_display,pd.DataFrame([total_row])],ignore_index=True)
-
-        cfg_v = {
-            "Mois":         st.column_config.TextColumn("Mois",          width=110),
-            "D1 (KT)":      st.column_config.NumberColumn("D1",          format="%.3f", width=90),
-            "D2 (KT)":      st.column_config.NumberColumn("D2",          format="%.3f", width=90),
-            "D3 (KT)":      st.column_config.NumberColumn("D3",          format="%.3f", width=90),
-            "Status Planif":st.column_config.TextColumn("Status Planif", width=150),
-            "Confirmation": st.column_config.TextColumn("Confirmation",  width=130),
-            "Site":         st.column_config.TextColumn("Site",          width=100),
-        }
-        st.dataframe(
-            df_with_total, use_container_width=True, hide_index=True,
-            height=min(700, 50+36*len(df_with_total)), column_config=cfg_v
-        )
-
-        csv_v = df_display.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
-        st.download_button("⬇ Exporter CSV (séparateur ; décimale ,)", csv_v, "ventes_pipeline.csv", "text/csv", key="dl_ventes")
-
-    else:
-        st.markdown("""
-        <div class="ph-card">
-          <h2>Pipeline des Ventes</h2>
-          <p>Chargez un fichier Excel ci-dessus.<br/>
-          Le LLM Claude détectera automatiquement les colonnes correspondant aux décades D1, D2, D3,
-          au mois, au status de planification, à la confirmation et au site.</p>
-          <div class="ph-badge-g">🤖 IA — Détection automatique des colonnes</div>
-        </div>""", unsafe_allow_html=True)
+        # Tableau final
+        st.markdown('<div class="stitle">Tableau des Ventes</div>', unsafe_allow_html=True)
+        cols_to_show = [v for v in vmap.values() if v and v in df_filt.columns]
+        st.dataframe(df_filt[cols_to_show], use_container_width=True, hide_index=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
