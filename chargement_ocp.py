@@ -1215,25 +1215,27 @@ elif page=="ventes":
             target = "January" if "January" in xl.sheet_names else xl.sheet_names[0]
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_full.columns = [str(c).strip() for c in df_full.columns]
-            
-            # --- DÉTECTION IA DES COLONNES ---
+            # --- DÉTECTION IA DÉBOGAGE ---
             if st.session_state.get("ventes_name") != file_v.name:
-                with st.spinner(f"🤖 Gemini analyse l'onglet '{target}'..."):
+                with st.spinner(f"🤖 Tentative d'analyse IA sur '{target}'..."):
                     try:
                         cols = df_full.columns.tolist()
-                        prompt = f"Expert OCP: Analyse ces colonnes: {cols}. Retourne UNIQUEMENT un JSON avec les clés exactes: mois, site, status, conf, d1, d2, d3."
+                        prompt = f"Expert OCP: Analyse ces colonnes: {cols}. Retourne UNIQUEMENT un JSON avec: mois, site, status, conf, d1, d2, d3."
                         res = model_ai.generate_content(prompt)
-                        # Nettoyage de la réponse JSON de Gemini
+                        
+                        # Affichage du résultat brut en cas de doute (Optionnel : à commenter après test)
+                        # st.write("Réponse IA:", res.text) 
+
                         json_str = res.text.replace("```json", "").replace("```", "").strip()
                         st.session_state["ventes_mapping"] = _json.loads(json_str)
                         st.session_state["ventes_df"] = df_full
                         st.session_state["ventes_name"] = file_v.name
+                        st.success("✅ IA : Configuration réussie !")
                         st.rerun()
                     except Exception as ai_err:
-                        st.warning("⚠️ L'IA n'a pas pu mapper automatiquement. Vérifiez la clé ou faites-le manuellement.")
-        except Exception as e:
-            st.error(f"Erreur de lecture : {e}")
-
+                        # ICI on affiche l'erreur réelle pour comprendre le blocage
+                        st.error(f"Détail de l'erreur : {str(ai_err)}")
+                        st.warning("⚠️ L'IA n'a pas pu mapper. Veuillez vérifier l'erreur ci-dessus.")
     # --- 2. AFFICHAGE ET FILTRES ---
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
