@@ -1905,34 +1905,31 @@ else:
 
 with st.container():
     st.markdown('<div class="filter-panel"><div class="filter-panel-title">Sélection des mois</div>', unsafe_allow_html=True)
-    col_fa, col_fb = st.columns([1, 3])
-    with col_fa:
-        filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
-    with col_fb:
-        if filtre_mode == "Sélection":
-            mois_choisis = st.multiselect(
-                "Mois à afficher", options=tous_mois,
-                default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
-                key="vf_mois"
-            )
-        else:
-            mois_choisis = tous_mois
-  st.markdown('</div>', unsafe_allow_html=True) # Ligne 1920
+        col_fa, col_fb = st.columns([1, 3])
+        with col_fa:
+            filtre_mode = st.radio("Mode", ["Tout", "Sélection"], horizontal=True, key="vf_mode")
+        with col_fb:
+            if filtre_mode == "Sélection":
+                mois_choisis = st.multiselect(
+                    "Mois à afficher", options=tous_mois,
+                    default=tous_mois[:3] if len(tous_mois) >= 3 else tous_mois,
+                    key="vf_mois"
+                )
+            else:
+                mois_choisis = tous_mois
+        st.markdown('</div>', unsafe_allow_html=True) 
 
-# --- Aligne ces lignes exactement sous le 's' de 'st.markdown' ---
-# Filtrer (Pas d'espaces en trop ici !)
-df_filtre = ventes_df[ventes_df[col_temporelle].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
+    # --- Filtrer (Sorti du bloc "with", aligné avec la colonne du "with") ---
+    df_filtre = ventes_df[ventes_df[col_temporelle].isin(mois_choisis)].copy() if mois_choisis else ventes_df.copy()
 
-# --- KPI Cards - Totaux décades ---
-total_d1 = round(df_filtre["D1"].sum(), 1)
-total_d2 = round(df_filtre["D2"].sum(), 1)
-total_d3 = round(df_filtre["D3"].sum(), 1)
-        total_all   = round(total_d1 + total_d2 + total_d3, 1)
-        periode_lbl = f"{len(df_filtre)} mois sélectionnés"
+    # --- KPI Cards - Totaux décades ---
+    total_d1 = round(df_filtre["D1"].sum(), 1)
+    total_d2 = round(df_filtre["D2"].sum(), 1)
+    total_d3 = round(df_filtre["D3"].sum(), 1)
+    total_all = round(total_d1 + total_d2 + total_d3, 1)
+    periode_lbl = f"{len(df_filtre)} mois sélectionnés"
 
-        st.markdown(f'<div class="stitle">Cumul décades — {periode_lbl}</div>', unsafe_allow_html=True)
-
-        kc1, kc2, kc3 = st.columns(3)
+    st.markdown(f'<div class="stitle">Cumul décades — {periode_lbl}</div>', unsafe_allow_html=True)
         with kc1:
             pct1 = round(total_d1 / total_all * 100, 1) if total_all > 0 else 0
             st.markdown(f"""
