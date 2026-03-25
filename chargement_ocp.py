@@ -1183,22 +1183,85 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 elif page=="ventes":
-    # ─── 1. INITIALISATION ET FORMATAGE ──────────────────────────────────
+    # ─── INITIALISATION ──────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
         st.session_state["ventes_df"] = None
         st.session_state["ventes_mapping"] = {}
+        st.session_state["ventes_mapping_done"] = False
 
     def clean_numeric_v(series):
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
     def fmt_fr(val):
-        """Remplace le point par la virgule pour l'affichage OCP"""
-        return f"{val:,.1f}".replace(",", " ").replace(".", ",").replace(" ", " ")
+        return f"{val:,.1f}".replace(",", " ").replace(".", ",").replace(" ", "\u00a0")
+
+    # ─── FONCTION DÉTECTION LLM ──────────────────────────────────────────
+    def detect_mapping_llm(columns, sample_rows):
+        """Envoie colonnes + exemples au LLM pour détecter automatiquement le mapping."""
+        import requests, json as _json
+
+        sample_str = ""
+        for i, row in enumerate(sample_rows[:3]):
+            sample_str += f"\nLigne {i+1}: " + " | ".join(f"{c}={v}" for c, v in zip(columns, row))
+
+        prompt = f"""Tu es un expert en analyse de fichiers Excel industriels pour OCP (phosphates).
+Voici les colonnes d'un fichier Pipeline des Ventes:
+{columns}
+
+Exemples de données (3 premières lignes):
+{sample_str}
+
+Identifie quelle colonne correspond à chaque rôle ci-dessous. Réponds UNIQUEMENT en JSON valide, sans aucun texte avant ou après:
+{{
+  "mois": "nom_exact_colonne_ou_null",
+  "site": "nom_exact_colonne_ou_null",
+  "status": "nom_exact_colonne_ou_null",
+  "conf": "nom_exact_colonne_ou_null",
+  "d1": "nom_exact_colonne_ou_null",
+  "d2": "nom_exact_colonne_ou_null",
+  "d3": "nom_exact_colonne_ou_null"
+}}
+
+Règles:
+- "mois": colonne contenant un mois (Janvier, Février, January, etc.)
+- "site": colonne indiquant le site (SAFI, JORF, etc.)
+- "status": colonne avec statut (Rade, En Cours, Nommée, etc.)
+- "conf": colonne de confirmation (CONF, Res.CAPA, etc.)
+- "d1": quantité décade 1 (J1-10), souvent numérique
+- "d2": quantité décade 2 (J11-20), souvent numérique
+- "d3": quantité décade 3 (J21+), souvent numérique
+Si une colonne n'existe pas, mets null."""
+
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 500,
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                timeout=20
+            )
+            data = resp.json()
+            raw = data["content"][0]["text"].strip()
+            # Nettoyer les éventuels backticks
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"): raw = raw[4:]
+            mapping = _json.loads(raw.strip())
+            # Valider que les colonnes existent vraiment
+            for k, v in mapping.items():
+                if v and v not in columns:
+                    mapping[k] = None
+            return mapping, None
+        except Exception as ex:
+            return {}, str(ex)
 
     st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage par Décades</div>', unsafe_allow_html=True)
-    
-    # ─── 2. CHARGEMENT ───────────────────────────────────────────────────
-    file_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T)
+
+    # ─── CHARGEMENT ──────────────────────────────────────────────────────
+    file_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T, key="ventes_up")
 
     if file_v:
         try:
@@ -1208,41 +1271,82 @@ elif page=="ventes":
             df_full = pd.read_excel(io.BytesIO(raw_v), sheet_name=target, engine=eng_v)
             df_full.columns = [str(c).strip() for c in df_full.columns]
             st.session_state["ventes_df"] = df_full
-            st.success("✅ Fichier importé.")
+            st.session_state["ventes_mapping_done"] = False  # Reset pour re-détecter
+
+            # ── DÉTECTION AUTOMATIQUE LLM ──
+            with st.spinner("🤖 Détection automatique des colonnes par l'IA..."):
+                cols = df_full.columns.tolist()
+                samples = df_full.head(5).values.tolist()
+                mapping_detected, err = detect_mapping_llm(cols, samples)
+
+            if err:
+                st.warning(f"⚠️ Détection IA échouée ({err}). Mapping manuel disponible.")
+            else:
+                st.session_state["ventes_mapping"] = mapping_detected
+                st.session_state["ventes_mapping_done"] = True
+
+                # Afficher le résultat de détection
+                detected_cols = {k: v for k, v in mapping_detected.items() if v}
+                roles_fr = {"mois": "Mois", "site": "Site", "status": "Statut",
+                            "conf": "Confirmation", "d1": "D1", "d2": "D2", "d3": "D3"}
+                badges = " &nbsp;·&nbsp; ".join(
+                    f'<span style="background:var(--green-lt);color:var(--green-dk);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">{roles_fr[k]}: {v}</span>'
+                    for k, v in detected_cols.items()
+                )
+                st.markdown(f"""
+                <div class="llm-badge" style="margin-bottom:8px">🤖 Mapping détecté automatiquement par l'IA</div>
+                <div style="margin-bottom:12px">{badges}</div>
+                """, unsafe_allow_html=True)
+
         except Exception as e:
             st.error(f"Erreur : {e}")
 
-    # ─── 3. LOGIQUE DE FILTRAGE ──────────────────────────────────────────
+    # ─── MAPPING MANUEL (OVERRIDE) ────────────────────────────────────────
     df_raw = st.session_state.get("ventes_df")
     vmap = st.session_state.get("ventes_mapping", {})
 
     if df_raw is not None:
-        # (Expander de Mapping reste identique...)
-        with st.expander("⚙️ CONFIGURATION DU MAPPING"):
+        with st.expander("⚙️ Vérifier / Corriger le mapping IA", expanded=not st.session_state.get("ventes_mapping_done", False)):
+            st.markdown("""<div class="llm-badge">🤖 Détection IA active — corrigez si nécessaire</div>""", unsafe_allow_html=True)
             new_map = {}
-            roles = {"mois":"Mois", "site":"Site", "status":"Statut", "conf":"Confirmation", "d1":"D1", "d2":"D2", "d3":"D3"}
+            roles = {"mois": "Mois", "site": "Site", "status": "Statut",
+                     "conf": "Confirmation", "d1": "D1 (KT)", "d2": "D2 (KT)", "d3": "D3 (KT)"}
             c_m = st.columns(4)
             for i, (rk, rl) in enumerate(roles.items()):
                 opts = ["(non mappé)"] + df_raw.columns.tolist()
-                idx = opts.index(vmap.get(rk)) if vmap.get(rk) in opts else 0
-                sel = c_m[i%4].selectbox(f"{rl}", opts, index=idx, key=f"v_{rk}")
+                current = vmap.get(rk)
+                idx = opts.index(current) if current in opts else 0
+                sel = c_m[i % 4].selectbox(f"{rl}", opts, index=idx, key=f"v_{rk}")
                 new_map[rk] = sel if sel != "(non mappé)" else None
-            if st.button("💾 Enregistrer"):
-                st.session_state["ventes_mapping"] = new_map
-                st.rerun()
 
-        # A. Filtre Statut Intelligent (Rade/Cours/Nommée)
+            col_btn1, col_btn2, _ = st.columns([1, 1, 3])
+            if col_btn1.button("💾 Appliquer corrections", type="primary"):
+                st.session_state["ventes_mapping"] = new_map
+                vmap = new_map
+                st.rerun()
+            if col_btn2.button("🔄 Re-détecter avec l'IA"):
+                with st.spinner("🤖 Re-détection en cours..."):
+                    cols = df_raw.columns.tolist()
+                    samples = df_raw.head(5).values.tolist()
+                    mapping_detected, err = detect_mapping_llm(cols, samples)
+                if not err:
+                    st.session_state["ventes_mapping"] = mapping_detected
+                    st.session_state["ventes_mapping_done"] = True
+                    st.rerun()
+                else:
+                    st.error(f"Erreur : {err}")
+
+        # ─── FILTRES ──────────────────────────────────────────────────────
         df_f = df_raw.copy()
         c_status = vmap.get("status")
         if c_status:
             mots_cles = ["nomm", "rade", "cours"]
             df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
 
-        # B. Filtres Fixes en Français
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
-        
-        liste_mois = ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+
+        liste_mois = ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                       "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         sel_m = f1.selectbox("📅 Mois", liste_mois)
         c_mois = vmap.get("mois")
@@ -1262,44 +1366,49 @@ elif page=="ventes":
             df_f = df_f[df_f[c_conf].astype(str).str.strip() == sel_co]
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ─── 4. CALCULS ET CARTES DE DÉCADES ──────────────────────────────
+        # ─── KPIs DÉCADES ─────────────────────────────────────────────────
         v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
         val_d1 = clean_numeric_v(df_f[v_d1]).sum() if v_d1 else 0
         val_d2 = clean_numeric_v(df_f[v_d2]).sum() if v_d2 else 0
         val_d3 = clean_numeric_v(df_f[v_d3]).sum() if v_d3 else 0
         total_m = val_d1 + val_d2 + val_d3
 
-        # Affichage des 3 Cards Décades
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.markdown(f'<div style="background:#E3F2FD; padding:15px; border-radius:10px; border-top:5px solid #2196F3; text-align:center;"><div style="color:#1565C0; font-weight:bold;">D1 (1-10)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d1)} KT</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#E3F2FD;padding:15px;border-radius:10px;border-top:5px solid #2196F3;text-align:center"><div style="color:#1565C0;font-weight:bold">D1 (1–10)</div><div style="font-size:22px;font-weight:800">{fmt_fr(val_d1)} KT</div></div>', unsafe_allow_html=True)
         with c2:
-            st.markdown(f'<div style="background:#FFF3E0; padding:15px; border-radius:10px; border-top:5px solid #FF9800; text-align:center;"><div style="color:#E65100; font-weight:bold;">D2 (11-20)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d2)} KT</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#FFF3E0;padding:15px;border-radius:10px;border-top:5px solid #FF9800;text-align:center"><div style="color:#E65100;font-weight:bold">D2 (11–20)</div><div style="font-size:22px;font-weight:800">{fmt_fr(val_d2)} KT</div></div>', unsafe_allow_html=True)
         with c3:
-            st.markdown(f'<div style="background:#E8F5E9; padding:15px; border-radius:10px; border-top:5px solid #4CAF50; text-align:center;"><div style="color:#1B5E20; font-weight:bold;">D3 (21+)</div><div style="font-size:22px; font-weight:800;">{fmt_fr(val_d3)} KT</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#E8F5E9;padding:15px;border-radius:10px;border-top:5px solid #4CAF50;text-align:center"><div style="color:#1B5E20;font-weight:bold">D3 (21+)</div><div style="font-size:22px;font-weight:800">{fmt_fr(val_d3)} KT</div></div>', unsafe_allow_html=True)
 
-        st.markdown(f"""<div style="background:#6B3FA0; color:white; padding:15px; border-radius:10px; margin-top:15px; text-align:center;">
-            <span style="font-size:18px;">TOTAL PIPELINE {sel_m.upper()} : </span>
-            <span style="font-size:28px; font-weight:900;">{fmt_fr(total_m)} KT</span>
+        st.markdown(f"""<div style="background:#6B3FA0;color:white;padding:15px;border-radius:10px;margin-top:15px;text-align:center">
+            <span style="font-size:18px">TOTAL PIPELINE {sel_m.upper()} : </span>
+            <span style="font-size:28px;font-weight:900">{fmt_fr(total_m)} KT</span>
         </div>""", unsafe_allow_html=True)
 
-        # ─── 5. TABLEAU FINAL ──────────────────────────────────────────────
+        # ─── TABLEAU ──────────────────────────────────────────────────────
         cols_finales = [vmap[k] for k in ["mois", "site", "status", "conf", "d1", "d2", "d3"] if vmap.get(k)]
-        
-        if not df_f.empty:
-            # Pour le tableau, on convertit les colonnes numériques en chaînes avec virgule
+        if cols_finales and not df_f.empty:
             df_disp = df_f[cols_finales].copy()
             for col_num in [v_d1, v_d2, v_d3]:
                 if col_num:
-                    df_disp[col_num] = df_disp[col_num].apply(lambda x: fmt_fr(clean_numeric_v(pd.Series([x])).iloc[0]))
-            
+                    df_disp[col_num] = df_disp[col_num].apply(
+                        lambda x: fmt_fr(clean_numeric_v(pd.Series([x])).iloc[0])
+                    )
             st.dataframe(df_disp, use_container_width=True, hide_index=True)
+        elif not cols_finales:
+            st.info("ℹ️ Aucun mapping détecté — chargez un fichier ou configurez manuellement.")
         else:
             st.info("ℹ️ Aucune donnée pour ces filtres.")
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE : EXPORT NAVIRE (placeholder)
-# ══════════════════════════════════════════════════════════════════════════════
-elif page=="navires":
+
+    else:
+        st.markdown("""
+        <div class="ph-card">
+          <h2>Pipeline des Ventes</h2>
+          <p>Chargez votre fichier Excel Pipeline. L'IA détectera automatiquement les colonnes (Mois, Site, Décades D1/D2/D3, etc.)</p>
+          <div class="ph-badge-g">🤖 DÉTECTION IA AUTOMATIQUE</div>
+        </div>""", unsafe_allow_html=True)
+    elif page=="navires":
     st.markdown("""<div class="ph-card"><h2>Export Navire</h2>
     <p>Ce module permettra de planifier et suivre les chargements navires, les escales et les volumes exportés.</p>
     <div class="ph-badge-b">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
