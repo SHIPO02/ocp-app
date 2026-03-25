@@ -1234,17 +1234,21 @@ elif page=="ventes":
             mots_cles = ["nomm", "rade", "cours"]
             df_f = df_f[df_f[c_status].astype(str).str.lower().str.contains('|'.join(mots_cles), na=False)]
 
-        # --- B. FILTRES FIXES (DEMANDÉS) ---
+        # --- B. FILTRES FIXES (FRANÇAIS) ---
         st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
         
-        # 1. Filtre Mois (Toute l'année)
-        liste_mois = ["Tous", "January", "February", "March", "April", "May", "June", 
-                      "July", "August", "September", "October", "November", "December"]
+        # 1. Filtre Mois (En Français)
+        liste_mois = ["Tous", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+                      "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        
         sel_m = f1.selectbox("📅 Sélectionner le Mois", liste_mois)
         c_mois = vmap.get("mois")
+        
         if sel_m != "Tous" and c_mois:
-            df_f = df_f[df_f[c_mois].astype(str).str.strip() == sel_m]
+            # On utilise .str.contains avec case=False pour être sûr de trouver le mois 
+            # même si l'orthographe dans l'Excel varie légèrement (ex: fevrier vs Février)
+            df_f = df_f[df_f[c_mois].astype(str).str.contains(sel_m, case=False, na=False)]
 
         # 2. Filtre Site (Safi / Jorf)
         liste_sites = ["Tous", "SAFI", "JORF"]
