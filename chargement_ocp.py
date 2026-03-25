@@ -1444,115 +1444,17 @@ elif page=="stock":
             if st.button(f"Lancer la simulation — Jorf / {mj}",key=f"{pj}_btn",type="primary"):
                 d,sv,na,nq=sim_stock(si_j,cj_j,nav2,ret2,cr2 if ucr2 else None)
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGES PLACEHOLDER
+# ══════════════════════════════════════════════════════════════════════════════
 elif page=="ventes":
-    import json as _json
-    import google.generativeai as _genai
+    st.markdown("""<div class="ph-card"><h2>Pipeline des Ventes</h2>
+    <p>Ce module permettra de suivre les opportunités commerciales, les performances par produit et par marché.</p>
+    <div class="ph-badge-g">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
 
-    # --- FONCTIONS TECHNIQUES ---
-    def read_excel_raw(raw_bytes, fname):
-        ff = io.BytesIO(raw_bytes); ff.name = fname
-        r, e = read_bytes(ff)
-        xl = pd.ExcelFile(io.BytesIO(r), engine=e)
-        return {sn: pd.read_excel(io.BytesIO(r), sheet_name=sn, header=None, engine=e) for sn in xl.sheet_names}, r, e
-
-    def df_to_text_sample(df, max_rows=6):
-        return "\n".join([" | ".join([str(v).strip() for v in df.iloc[ri].tolist()]) for ri in range(min(max_rows, len(df)))])
-
-    def parse_ventes_with_mapping(raw_bytes, fname, m):
-        ff = io.BytesIO(raw_bytes); ff.name = fname
-        r, e = read_bytes(ff)
-        df_raw = pd.read_excel(io.BytesIO(r), sheet_name=m['sheet'], header=m['header_row'], engine=e)
-        rows = []
-        for _, row in df_raw.iterrows():
-            m_val = str(row.get(m['month_col'], "")).strip()
-            if m_val.lower() in ["total", "nan", ""]: continue
-            d1, d2, d3 = force_n(row.get(m['d1_col'])), force_n(row.get(m['d2_col'])), force_n(row.get(m['d3_col']))
-            rows.append({"Mois": m_val, "D1": d1, "D2": d2, "D3": d3, "Total": round(d1+d2+d3,1), "Status": str(row.get(m['status_col'], "")), "Raw": " ".join(row.astype(str))})
-        return pd.DataFrame(rows)
-
-    # --- CONFIGURATION IA ---
-    try:
-        _genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = _genai.GenerativeModel('gemini-1.5-flash')
-    except:
-        st.error("🔑 Erreur : La clé GEMINI_API_KEY n'est pas valide dans les Secrets.")
-        st.stop()
-
-    st.markdown('<div class="stitle purple">Pipeline des Ventes — Analyse Gemini</div>', unsafe_allow_html=True)
-
-    # --- INTERFACE D'UPLOAD ---
-    with st.container():
-        st.markdown('<div class="upload-zone">', unsafe_allow_html=True)
-        f_v = st.file_uploader("Charger le Pipeline Excel", type=EXCEL_T, key="v_up")
-        if f_v and st.button("🚀 Lancer l'Analyse IA"):
-         with st.spinner("Analyse de l'onglet January par l'IA..."):
-                raw_v = f_v.read()
-                sheets, _, _ = read_excel_raw(raw_v, f_v.name)
-                
-                # --- SÉLECTION CIBLÉE DE L'ONGLET ---
-                target_sheet = None
-                # On cherche si "January" existe dans les onglets
-                for sn in sheets.keys():
-                    if "january" in sn.lower():
-                        target_sheet = sn
-                        break
-                
-                # Si on ne trouve pas "January", on prend le premier onglet par défaut
-                if not target_sheet:
-                    target_sheet = list(sheets.keys())[0]
-                    st.warning(f"Onglet 'January' non trouvé. Analyse de : {target_sheet}")
-
-                # On ne prépare l'échantillon QUE pour cet onglet précis
-                v_data = sheets[target_sheet]
-                v_clean = v_data.iloc[:15, :20].fillna("").astype(str) # On prend un peu plus de colonnes (20)
-                sample_txt = df_to_text_sample(v_clean, 10)
-                
-                prompt = f"""Tu es un expert OCP. Analyse cet échantillon de l'onglet "{target_sheet}" et retourne UNIQUEMENT un JSON.
-                Clés : sheet (doit être "{target_sheet}"), header_row (index 0), month_col, d1_col, d2_col, d3_col, status_col, unit.
-                DONNÉES:
-                {sample_txt}"""
-                
-                try:
-                    res = model.generate_content(prompt)
-                    if res and res.text:
-                        json_str = res.text.replace("```json", "").replace("```", "").strip()
-                        mapping = _json.loads(json_str)
-                        # On s'assure que le mapping utilise bien le bon onglet
-                        mapping['sheet'] = target_sheet 
-                        
-                        st.session_state["ventes_mapping"] = mapping
-                        st.session_state["ventes_df"] = parse_ventes_with_mapping(raw_v, f_v.name, mapping)
-                    else:
-                        st.error("L'IA n'a pas retourné de réponse pour l'onglet January.")
-                except Exception as e:
-                    st.error(f"Erreur lors de l'analyse : {str(e)}")
-    # --- AFFICHAGE DES RÉSULTATS (Alignement et Sécurité) ---
-    v_df = st.session_state.get("ventes_df")
-    if v_df is not None:
-        st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        
-        # Sécurisation des noms de colonnes pour les filtres
-        mois_col = "Mois" if "Mois" in v_df.columns else v_df.columns[0]
-        stat_col = "Status" if "Status" in v_df.columns else v_df.columns[-1]
-
-        site = c1.selectbox("📍 Filtrer par Site", ["Tous", "Jorf", "Safi"])
-        mois = c2.selectbox("📅 Filtrer par Mois", ["Tous"] + sorted(v_df[mois_col].unique().tolist()))
-        stat = c3.selectbox("✅ Statut Confirmation", ["Tous"] + sorted(v_df[stat_col].unique().tolist()))
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Application des filtres sur une copie
-        df_f = v_df.copy()
-        if site != "Tous": 
-            df_f = df_f[df_f["Raw"].str.contains(site, case=False, na=False)]
-        if mois != "Tous": 
-            df_f = df_f[df_f[mois_col] == mois]
-        if stat != "Tous": 
-            df_f = df_f[df_f[stat_col] == stat]
-
-        st.metric("Volume Total Filtré", f"{round(df_f['Total'].sum(), 1)} KT")
-        st.dataframe(df_f.drop(columns=["Raw"], errors="ignore"), use_container_width=True, hide_index=True)
 elif page=="navires":
     st.markdown("""<div class="ph-card"><h2>Export Navire</h2>
-    <p>Ce module permettra de planifier les chargements navires.</p>
+    <p>Ce module permettra de planifier et suivre les chargements navires, les escales et les volumes exportés.</p>
     <div class="ph-badge-b">PROCHAINEMENT</div></div>""", unsafe_allow_html=True)
