@@ -1239,22 +1239,65 @@ elif page == "ventes":
                 mapping[role] = exact[0] if exact else c
         return mapping
 
-    # ── NORMALISATION STATUT : regroupe en cours de chargement ──
-    # Statuts à regrouper sous "En cours de chargement"
-    STATUTS_REGROUPES = ["en rade", "en cours de chargement", "nomme", "nommé",
-                         "en cours", "rade", "chargement"]
+    # ══════════════════════════════════════════════════════════
+    # NORMALISATION STATUT — regroupement intelligent
+    # Logique :
+    #   1. Si le statut commence par un numéro (ex: "3. Recherche navire FOB"),
+    #      on extrait ce numéro comme clé de regroupement → tous les statuts
+    #      avec le même numéro sont fusionnés en un seul bloc.
+    #   2. Sinon, on applique le regroupement par mots-clés (en rade, nommé…)
+    #      → tous regroupés sous "En cours de chargement".
+    #   3. Les autres statuts sont conservés tels quels (strip).
+    # ══════════════════════════════════════════════════════════
+    STATUTS_REGROUPES_KW = ["en rade", "en cours de chargement", "nomme", "nommé",
+                             "en cours", "rade", "charge au bord", "chargement en cours"]
+
+    import unicodedata as _uc, re as _re
+
+    def _deaccent(t):
+        t = _uc.normalize('NFD', str(t))
+        return ''.join(c for c in t if _uc.category(c) != 'Mn').lower().strip()
+
+    def _extract_num(s):
+        """Extrait le préfixe numérique d'un statut, ex: '3. Recherche' → 3, sinon None."""
+        m = _re.match(r'^\s*(\d+)\s*[.\-\):]', str(s).strip())
+        return int(m.group(1)) if m else None
+
+    def _extract_label_no_num(s):
+        """Retire le préfixe numérique pour garder le nom pur."""
+        return _re.sub(r'^\s*\d+\s*[.\-\):]\s*', '', str(s).strip())
+
+    # Construction du dictionnaire de regroupement :
+    # num → label canonique (premier statut rencontré avec ce numéro)
+    _num_to_label = {}
+
+    def build_num_map(df_col):
+        """Pré-calcule le mapping numéro → label canonique depuis les données réelles."""
+        _num_to_label.clear()
+        for v in df_col.dropna().unique():
+            n = _extract_num(v)
+            if n is not None and n not in _num_to_label:
+                _num_to_label[n] = _extract_label_no_num(v)
 
     def normalize_statut(s):
-        """Retourne le label affiché et les sous-statuts regroupés."""
-        import unicodedata
-        def deaccent(t):
-            t = unicodedata.normalize('NFD', str(t))
-            return ''.join(c for c in t if unicodedata.category(c) != 'Mn').lower().strip()
-        s_norm = deaccent(str(s))
-        for kw in STATUTS_REGROUPES:
-            if deaccent(kw) in s_norm:
+        """
+        Retourne la clé de regroupement :
+        - Statuts numérotés : regroupés par numéro, label = nom sans numéro
+        - Mots-clés "en cours" : → "En cours de chargement"
+        - Autres : conservés tels quels
+        """
+        raw = str(s).strip()
+        n = _extract_num(raw)
+        if n is not None:
+            # Utilise le label canonique enregistré pour ce numéro
+            lbl = _num_to_label.get(n, _extract_label_no_num(raw))
+            return f"{n}. {lbl}"
+        # Pas de numéro → vérification mots-clés
+        s_norm = _deaccent(raw)
+        for kw in STATUTS_REGROUPES_KW:
+            if _deaccent(kw) in s_norm:
                 return "En cours de chargement"
-        return str(s).strip()
+        return raw
 
     # ─── INIT ───────────────────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
@@ -1361,9 +1404,12 @@ elif page == "ventes":
     # Construire les statuts normalisés disponibles
     c_stat_col = vmap.get("status")
     if c_stat_col and c_stat_col in df_raw.columns:
-        # Statuts bruts → normalisés
-        statuts_bruts   = df_raw[c_stat_col].dropna().unique().tolist()
-        statuts_norm    = sorted(set(normalize_statut(s) for s in statuts_bruts))
+        build_num_map(df_raw[c_stat_col])
+        statuts_bruts = df_raw[c_stat_col].dropna().unique().tolist()
+        statuts_norm  = sorted(
+            set(normalize_statut(s) for s in statuts_bruts),
+            key=lambda x: (int(_re.match(r"^(\d+)", x).group(1)) if _re.match(r"^\d+", x) else 999, x)
+        )
     else:
         statuts_norm = []
 
@@ -1558,7 +1604,9 @@ elif page == "ventes":
             st.warning(f"Aucune donnée pour {mois_rapport}.")
         else:
             # Ajouter colonne statut normalisé
+            # On recalcule le mapping numéro→label sur les données du rapport
             if c_stat_col and c_stat_col in df_rpt.columns:
+                build_num_map(df_rpt[c_stat_col])
                 df_rpt["__statut_norm__"] = df_rpt[c_stat_col].apply(normalize_statut)
             else:
                 df_rpt["__statut_norm__"] = "Inconnu"
@@ -1583,21 +1631,29 @@ elif page == "ventes":
               </div>
             </div>""", unsafe_allow_html=True)
 
-            # Grouper par statut normalisé
-            statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=str)
+            # Grouper par statut normalisé — trié par numéro puis alphabétique
+            def _sort_key_statut(x):
+                m = _re.match(r"^(\d+)", x)
+                return (int(m.group(1)) if m else 999, x)
+            statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=_sort_key_statut)
 
             for statut_norm in statuts_rapport:
                 df_stat = df_rpt[df_rpt["__statut_norm__"] == statut_norm]
                 if df_stat.empty: continue
 
-                # Sous-statuts bruts regroupés (pour le détail entre parenthèses)
+                # Sous-statuts bruts pour le détail entre parenthèses
+                # On retire le préfixe numérique des noms bruts pour un affichage propre
                 if c_stat_col and c_stat_col in df_stat.columns:
-                    sous_statuts_bruts = sorted(df_stat[c_stat_col].dropna().astype(str).str.strip().unique().tolist())
-                    # On affiche entre parenthèses seulement si plusieurs sous-statuts ou si normalisé différent du brut
-                    if len(sous_statuts_bruts) == 1 and sous_statuts_bruts[0].strip() == statut_norm:
+                    raw_vals = df_stat[c_stat_col].dropna().astype(str).str.strip().unique().tolist()
+                    # Afficher les noms bruts uniques, triés par numéro interne
+                    raw_vals_sorted = sorted(raw_vals, key=lambda v: (
+                        int(_re.match(r"^(\d+)", v).group(1)) if _re.match(r"^\d+", v) else 999, v
+                    ))
+                    # On affiche le détail entre parenthèses seulement s'il y a plusieurs sous-statuts
+                    if len(raw_vals_sorted) <= 1:
                         sous_label = ""
                     else:
-                        sous_label = f" <span style='font-size:12px;opacity:.75;font-weight:400'>({', '.join(sous_statuts_bruts)})</span>"
+                        sous_label = f" <span style='font-size:11px;opacity:.7;font-weight:400'>({', '.join(raw_vals_sorted)})</span>"
                 else:
                     sous_label = ""
 
