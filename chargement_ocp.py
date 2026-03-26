@@ -1567,29 +1567,51 @@ for statut in statuts:
       </div>
     </div>""", unsafe_allow_html=True)
 
-    # Détail par Port/Site
-    if c_port_site:
-        ports_list = sorted(df_stat[c_port_site].dropna().unique())
-        for port_val in ports_list:
-            df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
-            if df_port.empty: continue
+# Détail par Port/Site
+            if c_port_site:
+                ports_list = sorted(df_stat[c_port_site].dropna().unique())
+                for port_val in ports_list:
+                    df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
+                    if df_port.empty: 
+                        continue
 
-            p_tot = (clean_num(df_port[v_d1]).sum() + 
-                     clean_num(df_port[v_d2]).sum() + 
-                     clean_num(df_port[v_d3]).sum())
-            
-            site_label = norm_site(port_val)
+                    p_tot = (clean_num(df_port[v_d1]).sum() + 
+                             clean_num(df_port[v_d2]).sum() + 
+                             clean_num(df_port[v_d3]).sum())
+                    
+                    site_label = norm_site(port_val)
 
-            st.markdown(f"""
-            <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
-                border-left:3px solid {h_color};border-radius:8px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
-                <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
-                  {fmt_kt(p_tot)} KT
-                </span>
-              </div>
-            </div>""", unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
+                        border-left:3px solid {h_color};border-radius:8px">
+                      <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
+                        <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
+                          {fmt_kt(p_tot)} KT
+                        </span>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+
+                    # --- DÉBUT DE LA ZONE CORRIGÉE ---
+                    c_pays = vmap.get("pays")
+                    c_prod = vmap.get("produit")
+
+                    if c_pays:
+                        pays_list = sorted(df_port[c_pays].dropna().unique())
+                        for pays_val in pays_list:
+                            df_pays = df_port[df_port[c_pays].astype(str).str.strip() == str(pays_val)]
+                            if df_pays.empty: 
+                                continue
+                            
+                            p_val = (clean_num(df_pays[v_d1]).sum() + 
+                                     clean_num(df_pays[v_d2]).sum() + 
+                                     clean_num(df_pays[v_d3]).sum())
+
+                            st.markdown(f"""
+                            <div style="margin:2px 0 2px 40px; font-size:13px; color:#4A5568">
+                                🌍 <b>{pays_val}</b> : {fmt_kt(p_val)} KT
+                            </div>""", unsafe_allow_html=True)
+                    # --- FIN DE LA ZONE CORRIGÉE ---
 
             # Détail pays et produits (le reste de votre boucle existante)
             # ... (Gardez la suite de votre code pour pays et produits)
