@@ -1503,126 +1503,96 @@ elif page == "ventes":
                 if "JORF" in s: return "JORF"
                 if "SAFI" in s: return "SAFI"
                 return s
+# ─── RENDU DU RAPPORT (MODIFIÉ) ─────────────────────────────────────────
+st.markdown(f"""
+<div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
+    border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
+  <div style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;letter-spacing:.5px">
+    RAPPORT PIPELINE — {mois_rapport.upper()} {datetime.now().year}
+  </div>
+  <div style="font-size:12px;opacity:.8;margin-top:4px">
+    Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} · {len(df_rpt)} lignes analysées
+  </div>
+</div>""", unsafe_allow_html=True)
 
-            # ─── RENDU DU RAPPORT ─────────────────────────────────────────
+# Définition de la colonne Port/Site
+# On utilise 'loading_port' en priorité, sinon 'site'
+c_port_site = vmap.get("loading_port") or vmap.get("site")
+
+def norm_site(s):
+    """Normalise le nom du site à partir du port de chargement"""
+    val = str(s).upper().strip()
+    if "JORF" in val: return "JORF"
+    if "SAFI" in val: return "SAFI"
+    return val # Retourne le nom tel quel si c'est un autre port (ex: Agadir, Casablanca)
+
+# Grouper par statut
+if c_stat:
+    statuts = sorted(df_rpt[c_stat].dropna().unique().tolist(), key=str)
+else:
+    statuts = ["(Statut non mappé)"]
+
+for statut in statuts:
+    if c_stat:
+        df_stat = df_rpt[df_rpt[c_stat].astype(str).str.strip() == str(statut)]
+    else:
+        df_stat = df_rpt
+
+    if df_stat.empty:
+        continue
+
+    total_stat_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 else 0
+    total_stat_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 else 0
+    total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 else 0
+    total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
+
+    # (Gardez votre logique de color_map ici...)
+    h_color, bg_color = "#12202E", "#F2F4F7"
+    color_map = {"conf": ("#1565C0","#E3EAF8"), "rade": ("#6B3FA0","#F0EBF8"), "nommé": ("#C05A00","#FBF0E6"), "charge": ("#00843D","#E8F5EE")}
+    for k, (hc, bc) in color_map.items():
+        if k in str(statut).lower():
+            h_color, bg_color = hc, bc; break
+
+    st.markdown(f"""
+    <div style="background:{bg_color};border:1px solid {h_color}33;border-left:4px solid {h_color};
+        border-radius:10px;padding:14px 18px;margin:14px 0 6px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;
+            color:{h_color};text-transform:uppercase;letter-spacing:.5px">
+          📌 {statut}
+        </div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;color:{h_color}">
+          {fmt_kt(total_stat)} KT
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # Détail par Port/Site
+    if c_port_site:
+        ports_list = sorted(df_stat[c_port_site].dropna().unique())
+        for port_val in ports_list:
+            df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
+            if df_port.empty: continue
+
+            p_tot = (clean_num(df_port[v_d1]).sum() + 
+                     clean_num(df_port[v_d2]).sum() + 
+                     clean_num(df_port[v_d3]).sum())
+            
+            site_label = norm_site(port_val)
+
             st.markdown(f"""
-            <div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
-                border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
-              <div style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;letter-spacing:.5px">
-                RAPPORT PIPELINE — {mois_rapport.upper()} {datetime.now().year}
-              </div>
-              <div style="font-size:12px;opacity:.8;margin-top:4px">
-                Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} · {len(df_rpt)} lignes analysées
+            <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
+                border-left:3px solid {h_color};border-radius:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
+                <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
+                  {fmt_kt(p_tot)} KT
+                </span>
               </div>
             </div>""", unsafe_allow_html=True)
 
-            # Grouper par statut
-            if c_stat:
-                statuts = sorted(df_rpt[c_stat].dropna().unique().tolist(), key=str)
-            else:
-                statuts = ["(Statut non mappé)"]
-
-            for statut in statuts:
-                if c_stat:
-                    df_stat = df_rpt[df_rpt[c_stat].astype(str).str.strip() == str(statut)]
-                else:
-                    df_stat = df_rpt
-
-                if df_stat.empty:
-                    continue
-
-                total_stat_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 else 0
-                total_stat_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 else 0
-                total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 else 0
-                total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
-
-                special = is_special(statut)
-
-                # Couleur du header par statut
-                color_map = {
-                    "conf":   ("#1565C0","#E3EAF8"),
-                    "rade":   ("#6B3FA0","#F0EBF8"),
-                    "nommé":  ("#C05A00","#FBF0E6"),
-                    "charge": ("#00843D","#E8F5EE"),
-                    "résv":   ("#4A5568","#F2F4F7"),
-                }
-                h_color, bg_color = "#12202E", "#F2F4F7"
-                for k, (hc, bc) in color_map.items():
-                    if k in str(statut).lower():
-                        h_color, bg_color = hc, bc; break
-
-                st.markdown(f"""
-                <div style="background:{bg_color};border:1px solid {h_color}33;border-left:4px solid {h_color};
-                    border-radius:10px;padding:14px 18px;margin:14px 0 6px 0">
-                  <div style="display:flex;justify-content:space-between;align-items:center">
-                    <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;
-                        color:{h_color};text-transform:uppercase;letter-spacing:.5px">
-                      📌 {statut}
-                    </div>
-                    <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;color:{h_color}">
-                      {fmt_kt(total_stat)} KT
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:#4A5568">
-                    <span>D1 : <b>{fmt_kt(total_stat_d1)} KT</b></span>
-                    <span>D2 : <b>{fmt_kt(total_stat_d2)} KT</b></span>
-                    <span>D3 : <b>{fmt_kt(total_stat_d3)} KT</b></span>
-                  </div>
-                </div>""", unsafe_allow_html=True)
-
-                if special:
-                    # Statuts spéciaux : seulement site + total
-                    if c_site:
-                        for site_val in sorted(df_stat[c_site].dropna().unique()):
-                            df_site = df_stat[df_stat[c_site].astype(str).str.strip() == str(site_val)]
-                            s_d1 = clean_num(df_site[v_d1]).sum() if v_d1 else 0
-                            s_d2 = clean_num(df_site[v_d2]).sum() if v_d2 else 0
-                            s_d3 = clean_num(df_site[v_d3]).sum() if v_d3 else 0
-                            s_tot = s_d1 + s_d2 + s_d3
-                            site_label = norm_site(site_val)
-                            st.markdown(f"""
-                            <div style="margin:4px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
-                                border-radius:8px;display:flex;justify-content:space-between;align-items:center">
-                              <span style="font-size:13px;font-weight:700;color:#12202E">🏭 {site_label}</span>
-                              <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:{h_color}">
-                                {fmt_kt(s_tot)} KT
-                              </span>
-                            </div>""", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""<div style="margin:4px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;border-radius:8px">
-                            <span style="font-size:12px;color:#4A5568">Total : <b>{fmt_kt(total_stat)} KT</b></span></div>""",
-                            unsafe_allow_html=True)
-                else:
-                    # Autres statuts : détail par site → pays → produit
-                    sites_list = sorted(df_stat[c_site].dropna().unique()) if c_site else [None]
-
-                    for site_val in sites_list:
-                        if site_val is not None and c_site:
-                            df_site = df_stat[df_stat[c_site].astype(str).str.strip() == str(site_val)]
-                        else:
-                            df_site = df_stat
-
-                        if df_site.empty: continue
-
-                        s_d1  = clean_num(df_site[v_d1]).sum() if v_d1 else 0
-                        s_d2  = clean_num(df_site[v_d2]).sum() if v_d2 else 0
-                        s_d3  = clean_num(df_site[v_d3]).sum() if v_d3 else 0
-                        s_tot = s_d1 + s_d2 + s_d3
-                        site_label = norm_site(site_val) if site_val else "Site inconnu"
-
-                        st.markdown(f"""
-                        <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
-                            border-left:3px solid {h_color};border-radius:8px">
-                          <div style="display:flex;justify-content:space-between;align-items:center">
-                            <span style="font-size:14px;font-weight:700;color:#12202E">🏭 {site_label}</span>
-                            <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
-                              {fmt_kt(s_tot)} KT
-                            </span>
-                          </div>
-                          <div style="font-size:11px;color:#94A3B8;margin-top:4px">
-                            D1 : {fmt_kt(s_d1)} · D2 : {fmt_kt(s_d2)} · D3 : {fmt_kt(s_d3)}
-                          </div>
-                        </div>""", unsafe_allow_html=True)
+            # Détail pays et produits (le reste de votre boucle existante)
+            # ... (Gardez la suite de votre code pour pays et produits)
 
                         # Détail pays
                         c_pays = vmap.get("pays"); c_prod = vmap.get("produit")
