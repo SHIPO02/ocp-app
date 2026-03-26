@@ -1240,64 +1240,89 @@ elif page == "ventes":
         return mapping
 
     # ══════════════════════════════════════════════════════════
-    # NORMALISATION STATUT — regroupement intelligent
-    # Logique :
-    #   1. Si le statut commence par un numéro (ex: "3. Recherche navire FOB"),
-    #      on extrait ce numéro comme clé de regroupement → tous les statuts
-    #      avec le même numéro sont fusionnés en un seul bloc.
-    #   2. Sinon, on applique le regroupement par mots-clés (en rade, nommé…)
-    #      → tous regroupés sous "En cours de chargement".
-    #   3. Les autres statuts sont conservés tels quels (strip).
+    # NORMALISATION STATUT — regroupement par NOM SÉMANTIQUE
+    #
+    # Principe :
+    #   On retire TOUJOURS le préfixe numérique ("1.", "2.", "3."…)
+    #   puis on compare le nom pur (sans accents, minuscules) à une
+    #   liste de groupes sémantiques.
+    #
+    #   Groupes :
+    #     "En cours de chargement" ← en cours de chargement, en rade, nommé,
+    #                                  nomme, rade, charge au bord, chargement
+    #     "Laycan en discussion"   ← laycan
+    #     "En planif"              ← planif, en planification
+    #     "Recherche navire CFR"   ← recherche.*cfr, cfr
+    #     "Recherche navire FOB"   ← recherche.*fob, fob
+    #     Sinon → nom pur tel quel (sans numéro)
     # ══════════════════════════════════════════════════════════
-    STATUTS_REGROUPES_KW = ["en rade", "en cours de chargement", "nomme", "nommé",
-                             "en cours", "rade", "charge au bord", "chargement en cours"]
-
     import unicodedata as _uc, re as _re
 
     def _deaccent(t):
-        t = _uc.normalize('NFD', str(t))
-        return ''.join(c for c in t if _uc.category(c) != 'Mn').lower().strip()
+        t = _uc.normalize("NFD", str(t))
+        return "".join(c for c in t if _uc.category(c) != "Mn").lower().strip()
 
-    def _extract_num(s):
-        """Extrait le préfixe numérique d'un statut, ex: '3. Recherche' → 3, sinon None."""
-        m = _re.match(r'^\s*(\d+)\s*[.\-\):]', str(s).strip())
-        return int(m.group(1)) if m else None
+    def _strip_num(s):
+        """Retire le préfixe numérique : '3. Recherche navire FOB' → 'Recherche navire FOB'"""
+        return _re.sub(r"^\s*\d+\s*[.\-\):]\s*", "", str(s).strip()).strip()
 
-    def _extract_label_no_num(s):
-        """Retire le préfixe numérique pour garder le nom pur."""
-        return _re.sub(r'^\s*\d+\s*[.\-\):]\s*', '', str(s).strip())
+    # Table de regroupement sémantique : (liste de mots-clés) → label canonique
+    # L'ordre compte : premier match gagne
+    _SEMANTIC_GROUPS = [
+        # ── En cours de chargement ──────────────────────────────────────────
+        (["en cours de chargement", "en cours", "en rade", "rade",
+          "nomme", "nommé", "nommee", "charge au bord", "chargement en cours",
+          "chargement"], "En cours de chargement"),
+        # ── Laycan ──────────────────────────────────────────────────────────
+        (["laycan"], "Laycan en discussion"),
+        # ── Planif ──────────────────────────────────────────────────────────
+        (["planif"], "En planif"),
+        # ── Recherche navire CFR ─────────────────────────────────────────────
+        (["cfr"], "Recherche navire CFR"),
+        # ── Recherche navire FOB ─────────────────────────────────────────────
+        (["fob"], "Recherche navire FOB"),
+    ]
 
-    # Construction du dictionnaire de regroupement :
-    # num → label canonique (premier statut rencontré avec ce numéro)
-    _num_to_label = {}
-
-    def build_num_map(df_col):
-        """Pré-calcule le mapping numéro → label canonique depuis les données réelles."""
-        _num_to_label.clear()
-        for v in df_col.dropna().unique():
-            n = _extract_num(v)
-            if n is not None and n not in _num_to_label:
-                _num_to_label[n] = _extract_label_no_num(v)
+    # Ordre d'affichage souhaité dans le rapport
+    _STATUT_ORDER = [
+        "En cours de chargement",
+        "Laycan en discussion",
+        "En planif",
+        "Recherche navire CFR",
+        "Recherche navire FOB",
+    ]
 
     def normalize_statut(s):
         """
-        Retourne la clé de regroupement :
-        - Statuts numérotés : regroupés par numéro, label = nom sans numéro
-        - Mots-clés "en cours" : → "En cours de chargement"
-        - Autres : conservés tels quels
+        Retourne le label canonique du statut (sans numéro, regroupé sémantiquement).
+        Ex: '1. En cours de chargement' → 'En cours de chargement'
+            '2. En Rade'               → 'En cours de chargement'
+            '3. Nommé'                 → 'En cours de chargement'
+            '4. Laycan en discussion'  → 'Laycan en discussion'
+            '5. En planif'             → 'En planif'
+            '6. Recherche navire CFR'  → 'Recherche navire CFR'
+            '7. Recherche navire FOB'  → 'Recherche navire FOB'
         """
         raw = str(s).strip()
-        n = _extract_num(raw)
-        if n is not None:
-            # Utilise le label canonique enregistré pour ce numéro
-            lbl = _num_to_label.get(n, _extract_label_no_num(raw))
-            return f"{n}. {lbl}"
-        # Pas de numéro → vérification mots-clés
-        s_norm = _deaccent(raw)
-        for kw in STATUTS_REGROUPES_KW:
-            if _deaccent(kw) in s_norm:
-                return "En cours de chargement"
-        return raw
+        pure = _strip_num(raw)          # nom sans numéro
+        pure_n = _deaccent(pure)        # normalisé sans accents
+        for kws, label in _SEMANTIC_GROUPS:
+            for kw in kws:
+                if _deaccent(kw) in pure_n:
+                    return label
+        # Pas de match → retourner le nom pur (sans numéro) tel quel
+        return pure if pure else raw
+
+    def build_num_map(df_col):
+        """Garde la compatibilité — ne fait plus rien, le mapping est sémantique."""
+        pass
+
+    def _sort_key_statut_global(x):
+        """Trie selon _STATUT_ORDER, puis alphabétique."""
+        try:
+            return (_STATUT_ORDER.index(x), x)
+        except ValueError:
+            return (len(_STATUT_ORDER), x)
 
     # ─── INIT ───────────────────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
@@ -1406,9 +1431,9 @@ elif page == "ventes":
     if c_stat_col and c_stat_col in df_raw.columns:
         build_num_map(df_raw[c_stat_col])
         statuts_bruts = df_raw[c_stat_col].dropna().unique().tolist()
-        statuts_norm  = sorted(
+        statuts_norm = sorted(
             set(normalize_statut(s) for s in statuts_bruts),
-            key=lambda x: (int(_re.match(r"^(\d+)", x).group(1)) if _re.match(r"^\d+", x) else 999, x)
+            key=_sort_key_statut_global
         )
     else:
         statuts_norm = []
@@ -1631,11 +1656,8 @@ elif page == "ventes":
               </div>
             </div>""", unsafe_allow_html=True)
 
-            # Grouper par statut normalisé — trié par numéro puis alphabétique
-            def _sort_key_statut(x):
-                m = _re.match(r"^(\d+)", x)
-                return (int(m.group(1)) if m else 999, x)
-            statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=_sort_key_statut)
+            # Grouper par statut normalisé — trié selon l'ordre sémantique
+            statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=_sort_key_statut_global)
 
             for statut_norm in statuts_rapport:
                 df_stat = df_rpt[df_rpt["__statut_norm__"] == statut_norm]
@@ -1663,17 +1685,23 @@ elif page == "ventes":
                 total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 and v_d3 in df_stat.columns else 0
                 total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
 
-                # Couleur selon statut normalisé
+                # Couleur selon statut normalisé (correspondance sémantique)
                 h_color, bg_color = "#12202E", "#F2F4F7"
-                color_map = {
-                    "en cours de chargement": ("#C05A00", "#FBF0E6"),
-                    "conf": ("#1565C0", "#E3EAF8"),
-                    "res.capa": ("#6B3FA0", "#F0EBF8"),
-                    "charg": ("#00843D", "#E8F5EE"),
-                }
-                for k, (hc, bc) in color_map.items():
-                    if k in statut_norm.lower():
-                        h_color, bg_color = hc, bc; break
+                _sn_low = statut_norm.lower()
+                if "en cours de chargement" in _sn_low:
+                    h_color, bg_color = "#C05A00", "#FBF0E6"
+                elif "laycan" in _sn_low:
+                    h_color, bg_color = "#6B3FA0", "#F0EBF8"
+                elif "planif" in _sn_low:
+                    h_color, bg_color = "#1565C0", "#E3EAF8"
+                elif "cfr" in _sn_low:
+                    h_color, bg_color = "#00843D", "#E8F5EE"
+                elif "fob" in _sn_low:
+                    h_color, bg_color = "#B71C1C", "#FFEBEE"
+                elif "conf" in _sn_low:
+                    h_color, bg_color = "#1565C0", "#E3EAF8"
+                elif "res" in _sn_low and "capa" in _sn_low:
+                    h_color, bg_color = "#6B3FA0", "#F0EBF8"
 
                 # ── En-tête du statut avec décades ──
                 st.markdown(f"""
