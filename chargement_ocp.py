@@ -1451,7 +1451,7 @@ elif page == "ventes":
     sel_m  = frow1[0].selectbox("📅 Mois", MOIS_FR, key="v_mois")
     sel_s  = frow1[1].selectbox("📍 Site", ["Tous","JORF","SAFI"], key="v_site")
     sel_co = frow1[2].selectbox("✅ Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
-    sel_pays_opts = ["Tous"] + sorted(df_raw[vmap["pays"]].dropna().unique().tolist()) if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
+    sel_pays_opts = (["Tous"] + sorted(df_raw[vmap["pays"]].dropna().astype(str).str.strip().unique().tolist()))  if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
     sel_pays = frow1[3].selectbox("🌍 Pays", sel_pays_opts, key="v_pays")
 
     # ── NOUVEAU : Filtre multi-sélection Status Planif ──
@@ -1489,9 +1489,9 @@ elif page == "ventes":
     if sel_co != "Tous" and vmap.get("confirmation") and vmap["confirmation"] in df_f.columns:
         df_f = df_f[df_f[vmap["confirmation"]].astype(str).str.strip() == sel_co]
 
-    # Filtre pays
+    # Filtre pays — comparaison insensible à la casse et aux espaces
     if sel_pays != "Tous" and vmap.get("pays") and vmap["pays"] in df_f.columns:
-        df_f = df_f[df_f[vmap["pays"]].astype(str) == sel_pays]
+        df_f = df_f[df_f[vmap["pays"]].astype(str).str.strip().str.lower() == sel_pays.strip().lower()]
 
     # ── NOUVEAU : Filtre status planif multi-sélection ──
     if sel_statuts and c_stat_col and c_stat_col in df_f.columns:
