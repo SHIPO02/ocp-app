@@ -1593,29 +1593,28 @@ for statut in statuts:
               </div>
             </div>""", unsafe_allow_html=True)
 
-                    # --- DÉBUT DE LA ZONE CORRIGÉE ---
-                    c_pays = vmap.get("pays")
-                    c_prod = vmap.get("produit")
+           # --- DEBUT DE LA ZONE CORRIGEE (ALIGNEMENT RECTIFIÉ) ---
+                c_pays = vmap.get("pays")
+                c_prod = vmap.get("produit")
 
-                    if c_pays:
-                        pays_list = sorted(df_port[c_pays].dropna().unique())
-                        for pays_val in pays_list:
-                            df_pays = df_port[df_port[c_pays].astype(str).str.strip() == str(pays_val)]
-                            if df_pays.empty: 
-                                continue
-                            
-                            p_val = (clean_num(df_pays[v_d1]).sum() + 
-                                     clean_num(df_pays[v_d2]).sum() + 
-                                     clean_num(df_pays[v_d3]).sum())
+                if c_pays:
+                    # On récupère la liste des pays pour CE port précis
+                    pays_list = sorted(df_port[c_pays].dropna().unique())
+                    for pays_val in pays_list:
+                        df_pays = df_port[df_port[c_pays].astype(str).str.strip() == str(pays_val)]
+                        if df_pays.empty:
+                            continue
 
-                            st.markdown(f"""
-                            <div style="margin:2px 0 2px 40px; font-size:13px; color:#4A5568">
-                                🌍 <b>{pays_val}</b> : {fmt_kt(p_val)} KT
-                            </div>""", unsafe_allow_html=True)
-                    # --- FIN DE LA ZONE CORRIGÉE ---
+                        # Calcul du total pour le pays
+                        p_val = (clean_num(df_pays[v_d1]).sum() + 
+                                 clean_num(df_pays[v_d2]).sum() + 
+                                 clean_num(df_pays[v_d3]).sum())
 
-            # Détail pays et produits (le reste de votre boucle existante)
-            # ... (Gardez la suite de votre code pour pays et produits)
+                        st.markdown(f"""
+                        <div style="margin:2px 0 2px 40px; font-size:13px; color:#4A5568">
+                            🌍 <b>{pays_val}</b> : {fmt_kt(p_val)} KT
+                        </div>""", unsafe_allow_html=True)
+                # --- FIN DE LA ZONE CORRIGÉE ---
 
                         # Détail pays
                         c_pays = vmap.get("pays"); c_prod = vmap.get("produit")
