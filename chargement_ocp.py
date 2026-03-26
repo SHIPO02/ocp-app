@@ -1565,32 +1565,33 @@ for statut in statuts:
           {fmt_kt(total_stat)} KT
         </div>
       </div>
+    # ... ligne 1568 (fin du markdown précédent)
     </div>""", unsafe_allow_html=True)
 
-# Détail par Port/Site
-            if c_port_site:
-                ports_list = sorted(df_stat[c_port_site].dropna().unique())
-                for port_val in ports_list:
-                    df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
-                    if df_port.empty: 
-                        continue
+    # ─── Détail par Port/Site (ALIGNEMENT CORRIGÉ)
+    if c_port_site:
+        ports_list = sorted(df_stat[c_port_site].dropna().unique())
+        for port_val in ports_list:
+            df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
+            if df_port.empty: 
+                continue
 
-                    p_tot = (clean_num(df_port[v_d1]).sum() + 
-                             clean_num(df_port[v_d2]).sum() + 
-                             clean_num(df_port[v_d3]).sum())
-                    
-                    site_label = norm_site(port_val)
+            p_tot = (clean_num(df_port.get(v_d1, 0)).sum() + 
+                     clean_num(df_port.get(v_d2, 0)).sum() + 
+                     clean_num(df_port.get(v_d3, 0)).sum())
+            
+            site_label = norm_site(port_val)
 
-                    st.markdown(f"""
-                    <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
-                        border-left:3px solid {h_color};border-radius:8px">
-                      <div style="display:flex;justify-content:space-between;align-items:center">
-                        <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
-                        <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
-                          {fmt_kt(p_tot)} KT
-                        </span>
-                      </div>
-                    </div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
+                border-left:3px solid {h_color};border-radius:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
+                <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
+                  {fmt_kt(p_tot)} KT
+                </span>
+              </div>
+            </div>""", unsafe_allow_html=True)
 
                     # --- DÉBUT DE LA ZONE CORRIGÉE ---
                     c_pays = vmap.get("pays")
