@@ -1667,96 +1667,37 @@ elif page == "ventes":
                                                 unsafe_allow_html=True)
 
                                 st.markdown('</div>', unsafe_allow_html=True)
-# ─── RENDU DU RAPPORT (MODIFIÉ) ─────────────────────────────────────────
-st.markdown(f"""
-<div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
-    border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
-  <div style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;letter-spacing:.5px">
-    RAPPORT PIPELINE — {mois_rapport.upper()} {datetime.now().year}
-  </div>
-  <div style="font-size:12px;opacity:.8;margin-top:4px">
-    Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} · {len(df_rpt)} lignes analysées
-  </div>
-</div>""", unsafe_allow_html=True)
 
-# Définition de la colonne Port/Site
-# On utilise 'loading_port' en priorité, sinon 'site'
-c_port_site = vmap.get("loading_port") or vmap.get("site")
-
-def norm_site(s):
-    """Normalise le nom du site à partir du port de chargement"""
-    val = str(s).upper().strip()
-    if "JORF" in val: return "JORF"
-    if "SAFI" in val: return "SAFI"
-    return val # Retourne le nom tel quel si c'est un autre port (ex: Agadir, Casablanca)
-
-# Grouper par statut
-if c_stat:
-    statuts = sorted(df_rpt[c_stat].dropna().unique().tolist(), key=str)
-else:
-    statuts = ["(Statut non mappé)"]
-
-for statut in statuts:
-    if c_stat:
-        df_stat = df_rpt[df_rpt[c_stat].astype(str).str.strip() == str(statut)]
-    else:
-        df_stat = df_rpt
-
-    if df_stat.empty:
-        continue
-
-    total_stat_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 else 0
-    total_stat_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 else 0
-    total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 else 0
-    total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
-
-    # (Gardez votre logique de color_map ici...)
-    h_color, bg_color = "#12202E", "#F2F4F7"
-    color_map = {"conf": ("#1565C0","#E3EAF8"), "rade": ("#6B3FA0","#F0EBF8"), "nommé": ("#C05A00","#FBF0E6"), "charge": ("#00843D","#E8F5EE")}
-    for k, (hc, bc) in color_map.items():
-        if k in str(statut).lower():
-            h_color, bg_color = hc, bc; break
-
-    st.markdown(f"""
-    <div style="background:{bg_color};border:1px solid {h_color}33;border-left:4px solid {h_color};
-        border-radius:10px;padding:14px 18px;margin:14px 0 6px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;
-            color:{h_color};text-transform:uppercase;letter-spacing:.5px">
-          📌 {statut}
-        </div>
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;color:{h_color}">
-          {fmt_kt(total_stat)} KT
-        </div>
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-    # Détail par Port/Site
-    if c_port_site:
-        ports_list = sorted(df_stat[c_port_site].dropna().unique())
-        for port_val in ports_list:
-            df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
-            if df_port.empty: continue
-
-            p_tot = (clean_num(df_port[v_d1]).sum() + 
-                     clean_num(df_port[v_d2]).sum() + 
-                     clean_num(df_port[v_d3]).sum())
-            
-            site_label = norm_site(port_val)
+            # ─── RÉCAP FINAL ──────────────────────────────────────────────
+            tot_rpt_d1 = clean_num(df_rpt[v_d1]).sum() if v_d1 else 0
+            tot_rpt_d2 = clean_num(df_rpt[v_d2]).sum() if v_d2 else 0
+            tot_rpt_d3 = clean_num(df_rpt[v_d3]).sum() if v_d3 else 0
+            tot_rpt    = tot_rpt_d1 + tot_rpt_d2 + tot_rpt_d3
 
             st.markdown(f"""
-            <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
-                border-left:3px solid {h_color};border-radius:8px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
-                <span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:{h_color}">
-                  {fmt_kt(p_tot)} KT
-                </span>
+            <div style="margin-top:24px;background:linear-gradient(135deg,#12202E,#1E3A5F);color:white;padding:20px 28px;
+                border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2)">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;margin-bottom:12px;
+                  letter-spacing:.5px;opacity:.9">TOTAL GÉNÉRAL — {mois_rapport.upper()}</div>
+              <div style="display:flex;gap:32px;align-items:center">
+                <div style="text-align:center">
+                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D1</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#64B5F6">{fmt_kt(tot_rpt_d1)} KT</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D2</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#FFB74D">{fmt_kt(tot_rpt_d2)} KT</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D3</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#81C784">{fmt_kt(tot_rpt_d3)} KT</div>
+                </div>
+                <div style="margin-left:auto;text-align:right">
+                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">TOTAL</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:900;color:white">{fmt_kt(tot_rpt)} KT</div>
+                </div>
               </div>
             </div>""", unsafe_allow_html=True)
-
-            # Détail pays et produits (le reste de votre boucle existante)
-            # ... (Gardez la suite de votre code pour pays et produits)
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
