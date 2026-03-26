@@ -1183,7 +1183,7 @@ elif page=="stock":
                 show_sim(d,sv,na,nq,f"Stock — Jorf / {mj}",seuil=seuil)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE : PIPELINE DES VENTES (Version Finale avec Détails Décades & Persistance)
+# PAGE : PIPELINE DES VENTES (Version Complète Intégrale)
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "ventes":
 
@@ -1192,7 +1192,6 @@ elif page == "ventes":
         return pd.to_numeric(series, errors='coerce').fillna(0)
 
     def fmt_kt(val):
-        """Formatage français : 1 234,1 KT"""
         return f"{val:,.1f}".replace(",", "\u202f").replace(".", ",")
 
     def fuzzy_col(df, *keywords):
@@ -1217,7 +1216,6 @@ elif page == "ventes":
             ("produit", ["produit"]), ("loading_port", ["loading", "port"]),
         ]:
             mapping[role] = fuzzy_col(df, *kws)
-
         for role, kws in [("d1", ["d1"]), ("d2", ["d2"]), ("d3", ["d3"])]:
             c = fuzzy_col(df, *kws)
             if c and re.fullmatch(r'[dD]\s*[123]', c.strip()):
@@ -1227,7 +1225,7 @@ elif page == "ventes":
                 mapping[role] = exact[0] if exact else c
         return mapping
 
-    # ─── INIT & PERSISTANCE (Sauvegarde du fichier) ─────────────────────────
+    # ─── INIT & PERSISTANCE ────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
         st.session_state["ventes_df"] = None
     if "ventes_map" not in st.session_state:
@@ -1236,9 +1234,8 @@ elif page == "ventes":
     st.markdown('<div class="stitle">Pipeline des Ventes — Pilotage par Décades</div>', unsafe_allow_html=True)
 
     # ─── UPLOAD ─────────────────────────────────────────────────────────────
-    st.markdown('<div class="upload-zone"><div class="zone-title">📂 Charger le fichier Pipeline</div>', unsafe_allow_html=True)
+    st.markdown('<div class="upload-zone"><div class="zone-title">📂 Charger le fichier Pipeline</div></div>', unsafe_allow_html=True)
     file_v = st.file_uploader("Pipeline Excel", type=EXCEL_T, key="v_upload", label_visibility="collapsed")
-    st.markdown('</div>', unsafe_allow_html=True)
 
     if file_v:
         try:
@@ -1260,37 +1257,87 @@ elif page == "ventes":
     vmap   = st.session_state.get("ventes_map", {})
 
     if df_raw is None:
-        st.info("Veuillez charger un fichier Excel pour commencer.")
+        st.info("Chargez un fichier Excel Pipeline pour commencer.")
         st.stop()
 
-    # ─── MAPPING & FILTRES ──────────────────────────────────────────────────
-    # (Mapping manuel omis pour la brièveté, mais conservé dans ton app réelle)
-    
+    # ─── MAPPING MANUEL ────────────────────────────────────────────────────
+    with st.expander("⚙️ Vérifier / Ajuster le mapping des colonnes"):
+        ROLES = {"bl_month":"BL Month","phys_month":"Physical Month","work_month":"Working Month","del_month":"Delivery Month",
+                 "site":"Site","status":"Status Planif","confirmation":"Confirmation","pays":"Pays","produit":"Produit",
+                 "d1":"D1","d2":"D2","d3":"D3","loading_port":"Loading Port"}
+        new_map = {}
+        opts = ["(non mappé)"] + df_raw.columns.tolist()
+        cols_map = st.columns(4)
+        for i, (rk, rl) in enumerate(ROLES.items()):
+            cur = vmap.get(rk)
+            idx = opts.index(cur) if cur in opts else 0
+            sel = cols_map[i % 4].selectbox(rl, opts, index=idx, key=f"vm_{rk}")
+            new_map[rk] = sel if sel != "(non mappé)" else None
+        if st.button("💾 Enregistrer le mapping", type="primary"):
+            st.session_state["ventes_map"] = new_map
+            st.rerun()
+
+    # ─── FILTRES ─────────────────────────────────────────────────────────────
+    st.markdown('<div class="filter-panel"><div class="filter-panel-title">Filtres</div>', unsafe_allow_html=True)
+    fc1, fc2, fc3, fc4 = st.columns(4)
     col_mois_ref = vmap.get("bl_month") or vmap.get("del_month") or vmap.get("work_month") or vmap.get("phys_month")
     MOIS_FR = ["Tous","Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
     MOIS_EN = ["All","January","February","March","April","May","June","July","August","September","October","November","December"]
-
-    fc1, fc2, fc3, fc4 = st.columns(4)
+    
     sel_m = fc1.selectbox("📅 Mois", MOIS_FR, key="v_mois")
     sel_s = fc2.selectbox("📍 Site", ["Tous","JORF","SAFI"], key="v_site")
     sel_co = fc3.selectbox("✅ Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
     sel_pays = fc4.selectbox("🌍 Pays", ["Tous"] + sorted(df_raw[vmap["pays"]].dropna().unique().tolist()) if vmap.get("pays") else ["Tous"], key="v_pays")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Application des filtres
     df_f = df_raw.copy()
     if sel_m != "Tous" and col_mois_ref:
         m_en = MOIS_EN[MOIS_FR.index(sel_m)]
         df_f = df_f[df_f[col_mois_ref].astype(str).str.contains(f"{sel_m}|{m_en}", case=False, na=False)]
     if sel_s != "Tous" and vmap.get("site"):
         df_f = df_f[df_f[vmap["site"]].astype(str).str.upper().str.contains(sel_s)]
+    if sel_co != "Tous" and vmap.get("confirmation"):
+        df_f = df_f[df_f[vmap["confirmation"]].astype(str).str.strip() == sel_co]
+    if sel_pays != "Tous" and vmap.get("pays"):
+        df_f = df_f[df_f[vmap["pays"]].astype(str) == sel_pays]
 
-    # ─── GÉNÉRATEUR DE RAPPORT DÉTAILLÉ ─────────────────────────────────────
+    # ─── KPI CARDS ORANGE ──────────────────────────────────────────────────
+    v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
+    val_d1 = clean_num(df_f[v_d1]).sum() if v_d1 else 0
+    val_d2 = clean_num(df_f[v_d2]).sum() if v_d2 else 0
+    val_d3 = clean_num(df_f[v_d3]).sum() if v_d3 else 0
+    total_m = val_d1 + val_d2 + val_d3
+
+    st.markdown('<div class="stitle orange">Cumul — Résultats filtrés</div>', unsafe_allow_html=True)
+    
+    def build_card_html(label, val, col_dec, border_color, val_color):
+        html = f'<div style="background:white;border:1px solid #E0E4EA;border-radius:10px;padding:20px 22px;border-top:3px solid {border_color}">'
+        html += f'<div style="font-size:9px;font-weight:700;color:#94A3B8;margin-bottom:6px">{label}</div>'
+        html += f'<div style="font-size:36px;font-weight:700;color:{val_color}">{fmt_kt(val)}<span style="font-size:13px;color:#94A3B8"> KT</span></div>'
+        if vmap.get("produit") and col_dec and not df_f.empty:
+            prod_tots = df_f.groupby(df_f[vmap["produit"]].astype(str).str.strip())[col_dec].apply(lambda s: clean_num(s).sum()).sort_values(ascending=False).head(3)
+            for p, v in prod_tots.items():
+                if v > 0: html += f'<div style="font-size:10px;color:#4A5568;display:flex;justify-content:space-between"><span>{p}</span><b>{fmt_kt(v)}</b></div>'
+        html += "</div>"
+        return html
+
+    dc1, dc2, dc3 = st.columns(3)
+    dc1.markdown(build_card_html("D1 — Jours 1–10", val_d1, v_d1, "#1565C0", "#1565C0"), unsafe_allow_html=True)
+    dc2.markdown(build_card_html("D2 — Jours 11–20", val_d2, v_d2, "#C05A00", "#C05A00"), unsafe_allow_html=True)
+    dc3.markdown(build_card_html("D3 — Jours 21+", val_d3, v_d3, "#00843D", "#00843D"), unsafe_allow_html=True)
+
+    st.markdown(f'<div style="background:linear-gradient(135deg,#6B3FA0,#4527A0);color:white;padding:15px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin:15px 0"><b>TOTAL PIPELINE</b><span style="font-size:24px;font-weight:800">{fmt_kt(total_m)} KT</span></div>', unsafe_allow_html=True)
+
+    # ─── TABLEAU COMPLET ───────────────────────────────────────────────────
+    st.markdown('<div class="stitle">Tableau complet — toutes colonnes</div>', unsafe_allow_html=True)
+    st.dataframe(df_f, use_container_width=True, hide_index=True)
+
+    # ─── GÉNÉRATEUR DE RAPPORT ────────────────────────────────────────────
     st.markdown("---")
     st.markdown('<div class="stitle purple">📊 Rapport Automatique avec Détails Décades</div>', unsafe_allow_html=True)
     
     c_stat = vmap.get("status")
     c_port_site = vmap.get("loading_port") or vmap.get("site")
-    v_d1, v_d2, v_d3 = vmap.get("d1"), vmap.get("d2"), vmap.get("d3")
 
     def norm_site(s):
         val = str(s).upper().strip()
@@ -1298,76 +1345,38 @@ elif page == "ventes":
         if "SAFI" in val: return "SAFI"
         return val
 
-    # Bouton de génération
-    if st.button("🖨️ Générer le Rapport Complet", type="primary"):
-        df_rpt = df_f.copy()
-        
-        # En-tête
-        st.markdown(f'<div style="background:#00843D;color:white;padding:20px;border-radius:12px;font-weight:800;font-size:24px;text-align:center">RAPPORT DÉTAILLÉ — {sel_m.upper()}</div>', unsafe_allow_html=True)
+    if st.button("🖨️ Générer le Rapport Détail Décades", type="primary"):
+        # Rapport Style
+        st.markdown(f'<div style="background:#00843D;color:white;padding:20px;border-radius:12px;font-weight:800;font-size:24px;text-align:center">RAPPORT ANALYTIQUE — {sel_m.upper()}</div>', unsafe_allow_html=True)
 
-        statuts = sorted(df_rpt[c_stat].dropna().unique().tolist(), key=str) if c_stat else ["Global"]
-        
+        statuts = sorted(df_f[c_stat].dropna().unique().tolist(), key=str) if c_stat else ["Global"]
         for statut in statuts:
-            df_stat = df_rpt[df_rpt[c_stat].astype(str).str.strip() == str(statut)] if c_stat else df_rpt
+            df_stat = df_f[df_f[c_stat].astype(str).str.strip() == str(statut)] if c_stat else df_f
             if df_stat.empty: continue
-
-            sd1 = clean_num(df_stat[v_d1]).sum(); sd2 = clean_num(df_stat[v_d2]).sum(); sd3 = clean_num(df_stat[v_d3]).sum()
             
-            # Bloc Statut
-            st.markdown(f"""
-            <div style="background:#F2F4F7;border-left:5px solid #12202E;padding:15px;margin-top:20px;border-radius:8px">
-                <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:800">
-                    <span>📌 STATUT : {statut}</span>
-                    <span>{fmt_kt(sd1+sd2+sd3)} KT</span>
-                </div>
-                <div style="font-size:12px;color:#64748B">D1: {fmt_kt(sd1)} | D2: {fmt_kt(sd2)} | D3: {fmt_kt(sd3)}</div>
-            </div>""", unsafe_allow_html=True)
+            sd1 = clean_num(df_stat[v_d1]).sum(); sd2 = clean_num(df_stat[v_d2]).sum(); sd3 = clean_num(df_stat[v_d3]).sum()
+            st.markdown(f'<div style="background:#F2F4F7;border-left:5px solid #12202E;padding:15px;margin-top:20px;border-radius:8px"><div style="display:flex;justify-content:space-between;font-weight:800"><span>📌 {statut}</span><span>{fmt_kt(sd1+sd2+sd3)} KT</span></div><div style="font-size:11px;color:#64748B">D1: {fmt_kt(sd1)} | D2: {fmt_kt(sd2)} | D3: {fmt_kt(sd3)}</div></div>', unsafe_allow_html=True)
 
-            # --- NIVEAU SITE ---
             if c_port_site:
                 for port_val in sorted(df_stat[c_port_site].dropna().unique()):
                     df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
                     pd1 = clean_num(df_port[v_d1]).sum(); pd2 = clean_num(df_port[v_d2]).sum(); pd3 = clean_num(df_port[v_d3]).sum()
+                    st.markdown(f'<div style="margin:8px 0 0 20px;padding:10px;background:white;border:1px solid #E2E8F0;border-left:3px solid #1E293B;border-radius:6px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:13px"><span>🚢 PORT : {norm_site(port_val)}</span><span>{fmt_kt(pd1+pd2+pd3)} KT</span></div><div style="font-size:10px;color:#94A3B8">D1: {fmt_kt(pd1)} / D2: {fmt_kt(pd2)} / D3: {fmt_kt(pd3)}</div></div>', unsafe_allow_html=True)
                     
-                    st.markdown(f"""
-                    <div style="margin:10px 0 0 30px;padding:12px;background:white;border:1px solid #E2E8F0;border-left:4px solid #1E293B;border-radius:8px">
-                        <div style="display:flex;justify-content:space-between;font-weight:700">
-                            <span>🚢 PORT : {norm_site(port_val)}</span>
-                            <span>{fmt_kt(pd1+pd2+pd3)} KT</span>
-                        </div>
-                        <div style="font-size:11px;color:#94A3B8">Décades : D1={fmt_kt(pd1)} / D2={fmt_kt(pd2)} / D3={fmt_kt(pd3)}</div>""", unsafe_allow_html=True)
-
-                    # --- NIVEAU PAYS ---
-                    c_pays = vmap.get("pays")
-                    if c_pays:
-                        for pays_val in sorted(df_port[c_pays].dropna().unique()):
-                            df_pays = df_port[df_port[c_pays].astype(str).str.strip() == str(pays_val)]
+                    if vmap.get("pays"):
+                        for pays_val in sorted(df_port[vmap["pays"]].dropna().unique()):
+                            df_pays = df_port[df_port[vmap["pays"]].astype(str).str.strip() == str(pays_val)]
                             pyd1 = clean_num(df_pays[v_d1]).sum(); pyd2 = clean_num(df_pays[v_d2]).sum(); pyd3 = clean_num(df_pays[v_d3]).sum()
+                            st.markdown(f'<div style="margin:4px 0 0 40px;padding:8px;background:#F8FAFC;border-radius:4px"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600"><span>🌍 {pays_val}</span><span>{fmt_kt(pyd1+pyd2+pyd3)} KT</span></div><div style="font-size:9px;color:#94A3B8">D1:{fmt_kt(pyd1)} | D2:{fmt_kt(pyd2)} | D3:{fmt_kt(pyd3)}</div>', unsafe_allow_html=True)
                             
-                            st.markdown(f"""
-                            <div style="margin:8px 0 0 20px;padding:8px;background:#F8FAFC;border-radius:6px;border:1px dashed #CBD5E1">
-                                <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600">
-                                    <span>🌍 {pays_val}</span>
-                                    <span>{fmt_kt(pyd1+pyd2+pyd3)} KT</span>
-                                </div>
-                                <div style="font-size:10px;color:#64748B">D1:{fmt_kt(pyd1)} | D2:{fmt_kt(pyd2)} | D3:{fmt_kt(pyd3)}</div>""", unsafe_allow_html=True)
-
-                            # --- NIVEAU PRODUITS ---
-                            if c_prod:
-                                for pr in sorted(df_pays[c_prod].dropna().unique()):
-                                    df_pr = df_pays[df_pays[c_prod].astype(str).str.strip() == str(pr)]
+                            if vmap.get("produit"):
+                                for pr_val in sorted(df_pays[vmap["produit"]].dropna().unique()):
+                                    df_pr = df_pays[df_pays[vmap["produit"]].astype(str).str.strip() == str(pr_val)]
                                     prd1 = clean_num(df_pr[v_d1]).sum(); prd2 = clean_num(df_pr[v_d2]).sum(); prd3 = clean_num(df_pr[v_d3]).sum()
-                                    st.markdown(f"""
-                                    <div style="display:flex;justify-content:space-between;margin:4px 0 0 15px;font-size:11px;border-bottom:1px solid #F1F5F9">
-                                        <span>📦 {pr}</span>
-                                        <span><b>{fmt_kt(prd1+prd2+prd3)} KT</b> <small>(D1:{fmt_kt(prd1)} D2:{fmt_kt(prd2)} D3:{fmt_kt(prd3)})</small></span>
-                                    </div>""", unsafe_allow_html=True)
-                            st.markdown("</div>", unsafe_allow_html=True) # Fin Pays
-                    st.markdown("</div>", unsafe_allow_html=True) # Fin Port
+                                    st.markdown(f'<div style="display:flex;justify-content:space-between;margin-left:10px;font-size:11px;color:#475569"><span>📦 {pr_val}</span><span><b>{fmt_kt(prd1+prd2+prd3)}</b> <small>(D1:{fmt_kt(prd1)} D2:{fmt_kt(prd2)})</small></span></div>', unsafe_allow_html=True)
+                            st.markdown("</div>", unsafe_allow_html=True)
 
-        # Récap Final
-        tot = clean_num(df_rpt[v_d1]).sum() + clean_num(df_rpt[v_d2]).sum() + clean_num(df_rpt[v_d3]).sum()
-        st.markdown(f'<div style="margin-top:30px;background:#12202E;color:white;padding:20px;border-radius:12px;text-align:right;font-size:30px;font-weight:900">TOTAL GÉNÉRAL : {fmt_kt(tot)} KT</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="margin-top:30px;background:#12202E;color:white;padding:20px;border-radius:12px;text-align:right;font-size:30px;font-weight:900">TOTAL GÉNÉRAL : {fmt_kt(total_m)} KT</div>', unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
