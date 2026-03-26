@@ -1668,36 +1668,85 @@ elif page == "ventes":
 
                                 st.markdown('</div>', unsafe_allow_html=True)
 
-            # ─── RÉCAP FINAL ──────────────────────────────────────────────
+   # ─── GÉNÉRATEUR DE RAPPORT (VERSION CORRIGÉE) ────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown('<div class="stitle purple">📊 Générer un Rapport Automatique</div>', unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        rc1, rc2, rc3 = st.columns([2, 1, 1])
+        with rc1:
+            mois_rapport = st.selectbox("Mois du rapport", MOIS_FR[1:], key="rpt_mois")
+        with rc2:
+            col_mois_rpt = st.selectbox("Colonne mois de référence",
+                [c for c in [vmap.get("bl_month"), vmap.get("del_month"),
+                              vmap.get("work_month"), vmap.get("phys_month")] if c],
+                key="rpt_col_mois")
+        with rc3:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            gen_btn = st.button("🖨️ Générer le Rapport", type="primary", key="gen_rpt", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if gen_btn:
+        # Filtrer sur le mois choisi
+        mois_en_rpt = MOIS_EN[MOIS_FR.index(mois_rapport)]
+        df_rpt = df_raw[df_raw[col_mois_rpt].astype(str).str.contains(
+            f"{mois_rapport}|{mois_en_rpt}", case=False, na=False)].copy()
+
+        if df_rpt.empty:
+            st.warning(f"Aucune donnée pour {mois_rapport}.")
+        else:
+            c_stat = vmap.get("status")
+            c_port_site = vmap.get("loading_port") or vmap.get("site")
+
+            def norm_site(s):
+                val = str(s).upper().strip()
+                if "JORF" in val: return "JORF"
+                if "SAFI" in val: return "SAFI"
+                return val
+
+            # ─── RENDU DU RAPPORT
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
+                border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;letter-spacing:.5px">
+                RAPPORT PIPELINE — {mois_rapport.upper()} {datetime.now().year}
+              </div>
+            </div>""", unsafe_allow_html=True)
+
+            # Logique des statuts
+            statuts = sorted(df_rpt[c_stat].dropna().unique().tolist(), key=str) if c_stat else ["Global"]
+            
+            for statut in statuts:
+                df_stat = df_rpt[df_rpt[c_stat].astype(str).str.strip() == str(statut)] if c_stat else df_rpt
+                if df_stat.empty: continue
+
+                t_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 else 0
+                t_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 else 0
+                t_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 else 0
+                
+                st.markdown(f"""<div style="background:#F2F4F7;border-left:4px solid #12202E;padding:10px;margin-top:10px">
+                                <b>📌 {statut} : {fmt_kt(t_d1+t_d2+t_d3)} KT</b></div>""", unsafe_allow_html=True)
+
+                if c_port_site:
+                    for port_val in sorted(df_stat[c_port_site].dropna().unique()):
+                        df_port = df_stat[df_stat[c_port_site].astype(str).str.strip() == str(port_val)]
+                        p_tot = clean_num(df_port[v_d1]).sum() + clean_num(df_port[v_d2]).sum() + clean_num(df_port[v_d3]).sum()
+                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;🚢 **{norm_site(port_val)}** : {fmt_kt(p_tot)} KT")
+
+            # ─── RÉCAP FINAL (Indentation cruciale ici !)
             tot_rpt_d1 = clean_num(df_rpt[v_d1]).sum() if v_d1 else 0
             tot_rpt_d2 = clean_num(df_rpt[v_d2]).sum() if v_d2 else 0
             tot_rpt_d3 = clean_num(df_rpt[v_d3]).sum() if v_d3 else 0
-            tot_rpt    = tot_rpt_d1 + tot_rpt_d2 + tot_rpt_d3
+            tot_rpt = tot_rpt_d1 + tot_rpt_d2 + tot_rpt_d3
 
             st.markdown(f"""
-            <div style="margin-top:24px;background:linear-gradient(135deg,#12202E,#1E3A5F);color:white;padding:20px 28px;
-                border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2)">
-              <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;margin-bottom:12px;
-                  letter-spacing:.5px;opacity:.9">TOTAL GÉNÉRAL — {mois_rapport.upper()}</div>
-              <div style="display:flex;gap:32px;align-items:center">
-                <div style="text-align:center">
-                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D1</div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#64B5F6">{fmt_kt(tot_rpt_d1)} KT</div>
-                </div>
-                <div style="text-align:center">
-                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D2</div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#FFB74D">{fmt_kt(tot_rpt_d2)} KT</div>
-                </div>
-                <div style="text-align:center">
-                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">D3</div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;color:#81C784">{fmt_kt(tot_rpt_d3)} KT</div>
-                </div>
-                <div style="margin-left:auto;text-align:right">
-                  <div style="font-size:10px;opacity:.6;letter-spacing:1.5px;text-transform:uppercase">TOTAL</div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:900;color:white">{fmt_kt(tot_rpt)} KT</div>
-                </div>
-              </div>
+            <div style="margin-top:24px;background:linear-gradient(135deg,#12202E,#1E3A5F);color:white;padding:20px 28px;border-radius:12px;">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:900;text-align:right">TOTAL : {fmt_kt(tot_rpt)} KT</div>
             </div>""", unsafe_allow_html=True)
+
+# CET ALIGNEMENT EST CRUCIAL : le elif doit être au même niveau que le "if page == ..."
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE : EXPORT NAVIRE (placeholder)
 # ══════════════════════════════════════════════════════════════════════════════
