@@ -1478,8 +1478,12 @@ elif page == "ventes":
         df_f = df_f[df_f[col_mois_ref].astype(str).str.contains(f"{sel_m}|{mois_en}", case=False, na=False)]
 
     # Filtre site
-    if sel_s != "Tous" and vmap.get("site") and vmap["site"] in df_f.columns:
-        df_f = df_f[df_f[vmap["site"]].astype(str).str.upper().str.contains(sel_s)]
+    # Filtre site : utilise loading_port en priorité, sinon site
+    _col_site_filtre = (vmap.get("loading_port") if vmap.get("loading_port") and vmap.get("loading_port") in df_f.columns
+                        else vmap.get("site") if vmap.get("site") and vmap.get("site") in df_f.columns
+                        else None)
+    if sel_s != "Tous" and _col_site_filtre:
+        df_f = df_f[df_f[_col_site_filtre].astype(str).str.upper().str.contains(sel_s, na=False)]
 
     # Filtre confirmation
     if sel_co != "Tous" and vmap.get("confirmation") and vmap["confirmation"] in df_f.columns:
