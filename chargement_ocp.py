@@ -1360,16 +1360,66 @@ elif page == "ventes":
     total_m = val_d1 + val_d2 + val_d3
 
     st.markdown('<div class="stitle orange">Cumul — Résultats filtrés</div>', unsafe_allow_html=True)
+
+    # ── Helper : lignes produit pour une décade ──────────────────────────
+    def produit_detail_html(df_src, col_dec, color):
+        c_prod = vmap.get("produit")
+        if not c_prod or not col_dec:
+            return ""
+        rows_html = ""
+        prod_tots = (
+            df_src.groupby(df_src[c_prod].astype(str).str.strip())[col_dec]
+            .apply(lambda s: clean_num(s).sum())
+            .sort_values(ascending=False)
+        )
+        for prod, pval in prod_tots.items():
+            if pval <= 0:
+                continue
+            pct = (pval / prod_tots.sum() * 100) if prod_tots.sum() > 0 else 0
+            rows_html += f"""
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                padding:4px 0;border-bottom:1px solid #F2F4F7">
+              <span style="font-size:11px;color:#4A5568;font-weight:500">📦 {prod}</span>
+              <span style="font-size:11px;font-weight:700;color:{color}">
+                {fmt_kt(pval)} KT
+                <span style="font-size:9px;font-weight:400;color:#94A3B8;margin-left:4px">{pct:.0f}%</span>
+              </span>
+            </div>"""
+        if not rows_html:
+            return ""
+        return f"""
+        <div style="margin-top:10px;padding-top:8px;border-top:2px solid #F2F4F7">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+              color:#94A3B8;margin-bottom:6px">DÉTAIL PRODUITS</div>
+          {rows_html}
+        </div>"""
+
     dc1, dc2, dc3 = st.columns(3)
     with dc1:
-        st.markdown(f'<div class="dcard d2c"><div class="dcard-label">D1 — Jours 1–10</div>'
-                    f'<div class="dcard-val d2c">{fmt_kt(val_d1)}<span class="dcard-unit">KT</span></div></div>', unsafe_allow_html=True)
+        detail1 = produit_detail_html(df_f, v_d1, "#1565C0")
+        st.markdown(f"""
+        <div class="dcard d2c">
+          <div class="dcard-label">D1 — Jours 1–10</div>
+          <div class="dcard-val d2c">{fmt_kt(val_d1)}<span class="dcard-unit">KT</span></div>
+          {detail1}
+        </div>""", unsafe_allow_html=True)
     with dc2:
-        st.markdown(f'<div class="dcard d3c"><div class="dcard-label">D2 — Jours 11–20</div>'
-                    f'<div class="dcard-val d3c">{fmt_kt(val_d2)}<span class="dcard-unit">KT</span></div></div>', unsafe_allow_html=True)
+        detail2 = produit_detail_html(df_f, v_d2, "#C05A00")
+        st.markdown(f"""
+        <div class="dcard d3c">
+          <div class="dcard-label">D2 — Jours 11–20</div>
+          <div class="dcard-val d3c">{fmt_kt(val_d2)}<span class="dcard-unit">KT</span></div>
+          {detail2}
+        </div>""", unsafe_allow_html=True)
     with dc3:
-        st.markdown(f'<div class="dcard d1c"><div class="dcard-label">D3 — Jours 21+</div>'
-                    f'<div class="dcard-val d1c">{fmt_kt(val_d3)}<span class="dcard-unit">KT</span></div></div>', unsafe_allow_html=True)
+        detail3 = produit_detail_html(df_f, v_d3, "#00843D")
+        st.markdown(f"""
+        <div class="dcard d1c">
+          <div class="dcard-label">D3 — Jours 21+</div>
+          <div class="dcard-val d1c">{fmt_kt(val_d3)}<span class="dcard-unit">KT</span></div>
+          {detail3}
+        </div>""", unsafe_allow_html=True)
+
     st.markdown(f"""<div style="background:linear-gradient(135deg,#6B3FA0,#4527A0);color:white;padding:14px 20px;
         border-radius:10px;margin:12px 0 20px 0;display:flex;justify-content:space-between;align-items:center">
         <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:.5px">
