@@ -284,6 +284,7 @@ hr { border-color:var(--border2) !important; }
 CACHE_DIR   = ".ocp_cache"
 JORF_CACHE  = os.path.join(CACHE_DIR,"jorf.pkl")
 SAFI_CACHE  = os.path.join(CACHE_DIR,"safi.pkl")
+# ── NOUVEAU : cache pipeline ventes ──
 VENTES_CACHE = os.path.join(CACHE_DIR,"ventes.pkl")
 HIST_JORF   = os.path.join(CACHE_DIR,"hist_jorf.json")
 HIST_SAFI   = os.path.join(CACHE_DIR,"hist_safi.json")
@@ -551,6 +552,7 @@ for key,cache in [("jorf_loaded",JORF_CACHE),("safi_loaded",SAFI_CACHE)]:
                 st.session_state["safi_name"]=c.get("filename","")
         st.session_state[key]=True
 
+# ── NOUVEAU : chargement cache ventes au démarrage ──
 if "ventes_loaded" not in st.session_state:
     c = load_cache(VENTES_CACHE)
     if c:
@@ -1237,6 +1239,23 @@ elif page == "ventes":
                 mapping[role] = exact[0] if exact else c
         return mapping
 
+    # ══════════════════════════════════════════════════════════
+    # NORMALISATION STATUT — regroupement par NOM SÉMANTIQUE
+    #
+    # Principe :
+    #   On retire TOUJOURS le préfixe numérique ("1.", "2.", "3."…)
+    #   puis on compare le nom pur (sans accents, minuscules) à une
+    #   liste de groupes sémantiques.
+    #
+    #   Groupes :
+    #     "En cours de chargement" ← en cours de chargement, en rade, nommé,
+    #                                  nomme, rade, charge au bord, chargement
+    #     "Laycan en discussion"   ← laycan
+    #     "En planif"              ← planif, en planification
+    #     "Recherche navire CFR"   ← recherche.*cfr, cfr
+    #     "Recherche navire FOB"   ← recherche.*fob, fob
+    #     Sinon → nom pur tel quel (sans numéro)
+    # ══════════════════════════════════════════════════════════
     import unicodedata as _uc, re as _re
 
     def _deaccent(t):
@@ -1244,44 +1263,96 @@ elif page == "ventes":
         return "".join(c for c in t if _uc.category(c) != "Mn").lower().strip()
 
     def _strip_num(s):
+        """Retire le préfixe numérique : '3. Recherche navire FOB' → 'Recherche navire FOB'"""
         return _re.sub(r"^\s*\d+\s*[.\-\):]\s*", "", str(s).strip()).strip()
 
-    _SEMANTIC_GROUPS = [
-        (["en cours de chargement", "en cours", "en rade", "rade",
-          "nomme", "nommé", "nommee", "charge au bord", "chargement en cours",
-          "chargement"], "En cours de chargement"),
-        (["laycan"], "Laycan en discussion"),
-        (["planif"], "En planif"),
-        (["cfr"], "Recherche navire CFR"),
-        (["fob"], "Recherche navire FOB"),
-    ]
+    # Table de regroupement sémantique : (liste de mots-clés) → label canonique
+    # L'ordre compte : premier match gagne
+    # ══════════════════════════════════════════════════════════════════
+    # REGROUPEMENT SÉMANTIQUE INTELLIGENT (IA fuzzy)
+    #
+    # Principe : on retire le préfixe numérique, puis on regroupe les
+    # statuts dont le NOM PUR est "très proche" (distance de Levenshtein
+    # normalisée ≤ seuil, ou contenance de sous-chaîne commune).
+    #
+    # Les statuts sont regroupés DYNAMIQUEMENT depuis les données réelles :
+    # pas de liste figée. L'utilisateur voit les vrais libellés dans le
+    # filtre, le rapport regroupe les quasi-doublons.
+    # ══════════════════════════════════════════════════════════════════
 
-    _STATUT_ORDER = [
-        "En cours de chargement",
-        "Laycan en discussion",
-        "En planif",
-        "Recherche navire CFR",
-        "Recherche navire FOB",
-    ]
+    def _levenshtein(a, b):
+        """Distance de Levenshtein simple."""
+        if len(a) < len(b): a, b = b, a
+        if not b: return len(a)
+        prev = list(range(len(b)+1))
+        for i, ca in enumerate(a):
+            curr = [i+1]
+            for j, cb in enumerate(b):
+                curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(0 if ca==cb else 1)))
+            prev = curr
+        return prev[-1]
 
-    def normalize_statut(s):
-        raw = str(s).strip()
-        pure = _strip_num(raw)
-        pure_n = _deaccent(pure)
-        for kws, label in _SEMANTIC_GROUPS:
-            for kw in kws:
-                if _deaccent(kw) in pure_n:
-                    return label
-        return pure if pure else raw
+    def _similar(a, b, threshold=0.82):
+        """True si les deux chaînes sont sémantiquement très proches."""
+        a, b = _deaccent(a), _deaccent(b)
+        if a == b: return True
+        # containment : l'un contient l'autre (ex: "cfr" dans "cfr-hold")
+        if a in b or b in a: return True
+        # ratio de Levenshtein
+        maxlen = max(len(a), len(b))
+        if maxlen == 0: return True
+        ratio = 1 - _levenshtein(a, b) / maxlen
+        return ratio >= threshold
+
+    def _cluster_statuts(statuts_purs):
+        """
+        Regroupe une liste de statuts purs en clusters sémantiques.
+        Retourne dict: statut_pur → label_canonique_du_cluster
+        """
+        clusters = []  # liste de sets
+        for s in statuts_purs:
+            placed = False
+            for cluster in clusters:
+                # comparer avec le représentant (premier élément)
+                rep = next(iter(cluster))
+                if _similar(s, rep):
+                    cluster.add(s)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append({s})
+        # Pour chaque cluster, le label = le membre le plus court (le plus générique)
+        mapping = {}
+        for cluster in clusters:
+            label = min(cluster, key=lambda x: (len(x), x))
+            for s in cluster:
+                mapping[s] = label
+        return mapping
+
+    # Cache du mapping construit sur les données réelles
+    _statut_cluster_map = {}
 
     def build_num_map(df_col):
-        pass
+        """Construit le clustering sémantique depuis les données réelles."""
+        global _statut_cluster_map
+        purs = []
+        seen = set()
+        for v in df_col.dropna().unique():
+            p = _strip_num(str(v).strip())
+            if p and p not in seen:
+                purs.append(p); seen.add(p)
+        _statut_cluster_map = _cluster_statuts(purs)
+
+    def normalize_statut(s):
+        """Retourne le label canonique (nom pur regroupé sémantiquement)."""
+        raw = str(s).strip()
+        pure = _strip_num(raw)
+        if not pure: pure = raw
+        return _statut_cluster_map.get(pure, pure)
 
     def _sort_key_statut_global(x):
-        try:
-            return (_STATUT_ORDER.index(x), x)
-        except ValueError:
-            return (len(_STATUT_ORDER), x)
+        """Tri alphabétique (les clusters sont dynamiques, pas d'ordre fixe)."""
+        return (_deaccent(x), x)
 
     # ─── INIT ───────────────────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
@@ -1316,6 +1387,7 @@ elif page == "ventes":
             st.session_state["ventes_df"]   = df_full
             st.session_state["ventes_map"]  = detected_map
             st.session_state["ventes_name"] = file_v.name
+            # ── Sauvegarde cache ventes ──
             save_cache(VENTES_CACHE, {"ventes_df": df_full, "ventes_map": detected_map, "filename": file_v.name})
             st.success(f"✅ Fichier importé — feuille « {target} » — {len(df_full)} lignes")
         except Exception as e:
@@ -1326,6 +1398,7 @@ elif page == "ventes":
 
     if df_raw is None:
         st.info("Chargez un fichier Excel Pipeline pour commencer.")
+        # Bouton pour effacer le cache si besoin
         if st.button("🗑️ Effacer le cache Pipeline", key="clear_ventes_cache"):
             clear_cache(VENTES_CACHE)
             st.session_state["ventes_df"]   = None
@@ -1361,6 +1434,7 @@ elif page == "ventes":
             new_map[rk] = sel if sel != "(non mappé)" else None
         if st.button("💾 Enregistrer le mapping", type="primary"):
             st.session_state["ventes_map"] = new_map
+            # ── Mise à jour cache avec nouveau mapping ──
             save_cache(VENTES_CACHE, {
                 "ventes_df": df_raw,
                 "ventes_map": new_map,
@@ -1382,66 +1456,72 @@ elif page == "ventes":
     # ─── FILTRES ─────────────────────────────────────────────────────────────
     st.markdown('<div class="filter-panel"><div class="filter-panel-title">Filtres</div>', unsafe_allow_html=True)
 
-    # Construire les statuts normalisés disponibles
-    c_stat_col = vmap.get("status")
-    if c_stat_col and c_stat_col in df_raw.columns:
-        build_num_map(df_raw[c_stat_col])
-        statuts_bruts = df_raw[c_stat_col].dropna().unique().tolist()
-        statuts_norm = sorted(
-            set(normalize_statut(s) for s in statuts_bruts),
-            key=_sort_key_statut_global
-        )
-    else:
-        statuts_norm = []
-
     MOIS_FR = ["Tous","Janvier","Février","Mars","Avril","Mai","Juin",
                "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
     MOIS_EN = ["All","January","February","March","April","May","June",
                "July","August","September","October","November","December"]
 
-    # ══════════════════════════════════════════════════
-    # LIGNE 0 — 4 filtres de mois indépendants
-    # ══════════════════════════════════════════════════
-    frow0 = st.columns([2, 2, 2, 2])
-    sel_m_bl   = frow0[0].selectbox("📅 BL Month",       MOIS_FR, key="v_mois_bl")
-    sel_m_phys = frow0[1].selectbox("📅 Physical Month", MOIS_FR, key="v_mois_phys")
-    sel_m_work = frow0[2].selectbox("📅 Working Month",  MOIS_FR, key="v_mois_work")
-    sel_m_del  = frow0[3].selectbox("📅 Delivery Month", MOIS_FR, key="v_mois_del")
+    c_stat_col = vmap.get("status")
 
-    # LIGNE 1 — Site, Confirmation, Pays
-    frow1 = st.columns([2, 2, 2, 2])
-    sel_s  = frow1[0].selectbox("📍 Site", ["Tous","JORF","SAFI"], key="v_site")
-    sel_co = frow1[1].selectbox("✅ Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
-    sel_pays_opts = (["Tous"] + sorted(df_raw[vmap["pays"]].dropna().astype(str).str.strip().unique().tolist())) if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
-    sel_pays = frow1[2].selectbox("🌍 Pays", sel_pays_opts, key="v_pays")
+    # ── LIGNE 1 : 4 colonnes mois ─────────────────────────────────────────
+    frow0 = st.columns(4)
+    sel_m_bl   = frow0[0].selectbox("BL Month",       MOIS_FR, key="v_mois_bl")
+    sel_m_phys = frow0[1].selectbox("Physical Month", MOIS_FR, key="v_mois_phys")
+    sel_m_work = frow0[2].selectbox("Working Month",  MOIS_FR, key="v_mois_work")
+    sel_m_del  = frow0[3].selectbox("Delivery Month", MOIS_FR, key="v_mois_del")
 
-    # LIGNE 2 — Status Planif multi-sélection
-    frow2 = st.columns([4, 4])
+    # ── LIGNE 2 : Site, Confirmation, Pays ────────────────────────────────
+    frow1 = st.columns([2, 2, 4])
+    sel_s  = frow1[0].selectbox("Site", ["Tous","JORF","SAFI"], key="v_site")
+    sel_co = frow1[1].selectbox("Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
+    sel_pays_opts = (["Tous"] + sorted(df_raw[vmap["pays"]].dropna().astype(str).str.strip().unique().tolist()))         if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
+    sel_pays = frow1[2].selectbox("Pays", sel_pays_opts, key="v_pays")
+
+    # ── Pré-filtrage mois pour listes dynamiques ───────────────────────────
+    df_prefilt = df_raw.copy()
+    for sel_mx, role_key in [
+        (sel_m_bl,"bl_month"),(sel_m_phys,"phys_month"),
+        (sel_m_work,"work_month"),(sel_m_del,"del_month"),
+    ]:
+        if sel_mx != "Tous":
+            col_mx = vmap.get(role_key)
+            if col_mx and col_mx in df_prefilt.columns:
+                mois_en_x = MOIS_EN[MOIS_FR.index(sel_mx)]
+                df_prefilt = df_prefilt[df_prefilt[col_mx].astype(str).str.contains(
+                    f"{sel_mx}|{mois_en_x}", case=False, na=False)]
+
+    # ── Statuts dynamiques depuis le pré-filtrage mois ─────────────────────
+    if c_stat_col and c_stat_col in df_prefilt.columns:
+        build_num_map(df_prefilt[c_stat_col])
+        statuts_norm = sorted(
+            set(normalize_statut(s) for s in df_prefilt[c_stat_col].dropna().unique()),
+            key=_sort_key_statut_global
+        )
+    else:
+        statuts_norm = []
+
+    # ── LIGNE 3 : Status Planif (multi, dynamique selon mois) ─────────────
     if statuts_norm:
-        sel_statuts = frow2[0].multiselect(
-            "📋 Status Planif (multi-sélection)",
+        sel_statuts = st.multiselect(
+            "Status Planif",
             options=statuts_norm,
             default=[],
             key="v_statuts",
-            help="Laissez vide pour afficher tous les statuts."
+            help="Les statuts affichés correspondent aux mois sélectionnés."
         )
     else:
         sel_statuts = []
-        frow2[0].info("Mappez la colonne Status Planif pour activer ce filtre.")
+        if c_stat_col:
+            st.caption("Aucun statut disponible pour les filtres mois sélectionnés.")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════
-    # APPLICATION DES FILTRES
-    # ══════════════════════════════════════════════════
+    # ── Appliquer tous les filtres ──────────────────────────────────────────
     df_f = df_raw.copy()
 
-    # ── Filtres mois — 4 colonnes indépendantes ──
     for sel_mx, role_key in [
-        (sel_m_bl,   "bl_month"),
-        (sel_m_phys, "phys_month"),
-        (sel_m_work, "work_month"),
-        (sel_m_del,  "del_month"),
+        (sel_m_bl,"bl_month"),(sel_m_phys,"phys_month"),
+        (sel_m_work,"work_month"),(sel_m_del,"del_month"),
     ]:
         if sel_mx != "Tous":
             col_mx = vmap.get(role_key)
@@ -1450,22 +1530,18 @@ elif page == "ventes":
                 df_f = df_f[df_f[col_mx].astype(str).str.contains(
                     f"{sel_mx}|{mois_en_x}", case=False, na=False)]
 
-    # Filtre site
     _col_site_filtre = (vmap.get("loading_port") if vmap.get("loading_port") and vmap.get("loading_port") in df_f.columns
                         else vmap.get("site") if vmap.get("site") and vmap.get("site") in df_f.columns
                         else None)
     if sel_s != "Tous" and _col_site_filtre:
         df_f = df_f[df_f[_col_site_filtre].astype(str).str.upper().str.contains(sel_s, na=False)]
 
-    # Filtre confirmation
     if sel_co != "Tous" and vmap.get("confirmation") and vmap["confirmation"] in df_f.columns:
         df_f = df_f[df_f[vmap["confirmation"]].astype(str).str.strip() == sel_co]
 
-    # Filtre pays
     if sel_pays != "Tous" and vmap.get("pays") and vmap["pays"] in df_f.columns:
         df_f = df_f[df_f[vmap["pays"]].astype(str).str.strip().str.lower() == sel_pays.strip().lower()]
 
-    # Filtre status planif
     if sel_statuts and c_stat_col and c_stat_col in df_f.columns:
         df_f = df_f[df_f[c_stat_col].apply(lambda x: normalize_statut(x) in sel_statuts)]
 
@@ -1476,87 +1552,108 @@ elif page == "ventes":
     val_d3 = clean_num(df_f[v_d3]).sum() if v_d3 and v_d3 in df_f.columns else 0
     total_m = val_d1 + val_d2 + val_d3
 
-    if sel_statuts:
-        badges = " ".join(
-            f'<span style="background:#E3EAF8;color:#1565C0;border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700;margin-right:4px">{s}</span>'
-            for s in sel_statuts
-        )
-        st.markdown(f'<div style="margin:-8px 0 12px 0">Filtre statut actif : {badges}</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="stitle orange">Cumul — Résultats filtrés</div>', unsafe_allow_html=True)
+    # ── Résumé filtres actifs ────────────────────────────────────────────
+    active_filters = []
+    for sel_mx, lbl_mx in [(sel_m_bl,"BL"),(sel_m_phys,"Physical"),(sel_m_work,"Working"),(sel_m_del,"Delivery")]:
+        if sel_mx != "Tous":
+            active_filters.append(f'<span style="background:#E8F5EE;color:#005C2A;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;margin-right:4px">{lbl_mx}: {sel_mx}</span>')
+    for s in sel_statuts:
+        active_filters.append(f'<span style="background:#E3EAF8;color:#1565C0;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;margin-right:4px">{s}</span>')
+    if sel_s != "Tous":
+        active_filters.append(f'<span style="background:#FBF0E6;color:#C05A00;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;margin-right:4px">Site: {sel_s}</span>')
+    if sel_pays != "Tous":
+        active_filters.append(f'<span style="background:#F0EBF8;color:#6B3FA0;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;margin-right:4px">Pays: {sel_pays}</span>')
+    if active_filters:
+        st.markdown(f'<div style="margin:4px 0 14px 0;display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:10px;color:#94A3B8;margin-right:4px">Filtres actifs :</span>{"".join(active_filters)}</div>', unsafe_allow_html=True)
 
     c_prod = vmap.get("produit")
 
-    def build_card_html(label, val, col_dec, border_color, val_color):
-        html = (
-            "<div style=\"background:white;border:1px solid #E0E4EA;border-radius:10px;"
-            "padding:20px 22px;box-shadow:0 1px 3px rgba(0,0,0,0.07);position:relative;"
-            "overflow:hidden;border-top:3px solid " + border_color + "\">"
-            "<div style=\"font-size:9px;font-weight:700;letter-spacing:1.5px;"
-            "text-transform:uppercase;color:#94A3B8;margin-bottom:6px\">" + label + "</div>"
-            "<div style=\"font-family:'Barlow Condensed',sans-serif;font-size:36px;"
-            "font-weight:700;line-height:1;color:" + val_color + "\">"
-            + fmt_kt(val) +
-            "<span style=\"font-size:13px;font-weight:500;color:#94A3B8;margin-left:3px\">KT</span>"
-            "</div>"
+    # ── Barre TOTAL au-dessus des cartes ─────────────────────────────────
+    mois_labels = []
+    for sel_mx, lbl_mx in [(sel_m_bl,"BL"),(sel_m_phys,"Phys"),(sel_m_work,"Work"),(sel_m_del,"Del")]:
+        if sel_mx != "Tous": mois_labels.append(f"{lbl_mx}: {sel_mx}")
+    filtre_label = " · ".join(mois_labels) if mois_labels else "TOUS MOIS"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#12202E,#1E3A5F);color:white;padding:12px 22px;
+        border-radius:8px;margin:0 0 14px 0;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;
+          letter-spacing:.5px;opacity:.85">TOTAL PIPELINE — {filtre_label}</span>
+      <div style="display:flex;gap:20px;align-items:center">
+        <div style="text-align:center">
+          <div style="font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:1px">D1</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;color:#64B5F6">{fmt_kt(val_d1)} KT</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:1px">D2</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;color:#FFB74D">{fmt_kt(val_d2)} KT</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:1px">D3</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;color:#81C784">{fmt_kt(val_d3)} KT</div>
+        </div>
+        <div style="border-left:1px solid rgba(255,255,255,.25);padding-left:18px">
+          <div style="font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:1px">TOTAL</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:900">{fmt_kt(total_m)} KT</div>
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # ── Cartes D1/D2/D3 — qualités cliquables (expander) ─────────────────
+    def build_card_interactive(decade_label, val, col_dec, border_color, val_color):
+        st.markdown(
+            f'<div style="background:white;border:1px solid #E0E4EA;border-radius:10px;'
+            f'padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.07);border-top:3px solid {border_color};margin-bottom:4px">',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f'<div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;'
+            f'color:#94A3B8;margin-bottom:4px">{decade_label}</div>'
+            f'<div style="font-family:Barlow Condensed,sans-serif;font-size:34px;font-weight:700;'
+            f'line-height:1;color:{val_color};margin-bottom:10px">{fmt_kt(val)}<span style="font-size:13px;'
+            f'font-weight:500;color:#94A3B8;margin-left:3px">KT</span></div>',
+            unsafe_allow_html=True
         )
         if c_prod and c_prod in df_f.columns and col_dec and col_dec in df_f.columns and not df_f.empty:
-            prod_tots = (
+            grp = (
                 df_f.groupby(df_f[c_prod].astype(str).str.strip())[col_dec]
                 .apply(lambda s: clean_num(s).sum())
                 .sort_values(ascending=False)
             )
-            total_dec = prod_tots.sum()
-            rows = [(p, v) for p, v in prod_tots.items() if v > 0]
-            if rows:
-                html += (
-                    "<div style=\"margin-top:12px;padding-top:10px;"
-                    "border-top:2px solid #F2F4F7\">"
-                    "<div style=\"font-size:9px;font-weight:700;letter-spacing:1.5px;"
-                    "text-transform:uppercase;color:#94A3B8;margin-bottom:8px\">DÉTAIL PRODUITS</div>"
-                )
-                for prod, pval in rows:
+            total_dec = grp.sum()
+            items = [(p, v) for p, v in grp.items() if v > 0]
+            if items:
+                st.markdown('<div style="border-top:1px solid #EEF0F4;padding-top:8px">', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94A3B8;margin-bottom:6px">QUALITES</div>', unsafe_allow_html=True)
+                for prod, pval in items:
                     pct = round(pval / total_dec * 100) if total_dec > 0 else 0
-                    html += (
-                        "<div style=\"display:flex;justify-content:space-between;"
-                        "align-items:center;padding:5px 0;"
-                        "border-bottom:1px solid #F8FAFC\">"
-                        "<span style=\"font-size:11px;color:#4A5568;font-weight:500\">"
-                        + str(prod) + "</span>"
-                        "<div style=\"text-align:right\">"
-                        "<span style=\"font-size:12px;font-weight:700;color:" + val_color + "\">"
-                        + fmt_kt(pval) + " KT</span>"
-                        "<span style=\"display:block;font-size:9px;color:#94A3B8\">"
-                        + str(pct) + "%</span>"
-                        "</div></div>"
-                    )
-                html += "</div>"
-        html += "</div>"
-        return html
+                    bar_w = max(3, pct)
+                    with st.expander(f"{prod}  |  {fmt_kt(pval)} KT  ({pct}%)"):
+                        st.markdown(
+                            f'<div style="background:#F8FAFC;border-radius:6px;padding:10px 14px;">'
+                            f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
+                            f'<span style="font-size:12px;font-weight:700;color:#12202E">{prod}</span>'
+                            f'<span style="font-size:14px;font-weight:800;color:{val_color}">{fmt_kt(pval)} KT</span>'
+                            f'</div>'
+                            f'<div style="height:5px;background:#E0E4EA;border-radius:3px">'
+                            f'<div style="width:{bar_w}%;height:5px;background:{border_color};border-radius:3px"></div>'
+                            f'</div>'
+                            f'<div style="font-size:10px;color:#94A3B8;margin-top:5px">{pct}% du total {decade_label.split("—")[0].strip()}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     dc1, dc2, dc3 = st.columns(3)
     with dc1:
-        st.markdown(build_card_html("D1 — Jours 1–10",  val_d1, v_d1, "#1565C0", "#1565C0"), unsafe_allow_html=True)
+        build_card_interactive("D1 — Jours 1–10",  val_d1, v_d1, "#1565C0", "#1565C0")
     with dc2:
-        st.markdown(build_card_html("D2 — Jours 11–20", val_d2, v_d2, "#C05A00", "#C05A00"), unsafe_allow_html=True)
+        build_card_interactive("D2 — Jours 11–20", val_d2, v_d2, "#C05A00", "#C05A00")
     with dc3:
-        st.markdown(build_card_html("D3 — Jours 21+",   val_d3, v_d3, "#00843D", "#00843D"), unsafe_allow_html=True)
+        build_card_interactive("D3 — Jours 21+",   val_d3, v_d3, "#00843D", "#00843D")
 
-    # Label résumé des filtres mois actifs
-    mois_actifs = []
-    for sel_mx, label_mx in [(sel_m_bl,"BL"),(sel_m_phys,"Phys."),(sel_m_work,"Work."),(sel_m_del,"Del.")]:
-        if sel_mx != "Tous":
-            mois_actifs.append(f"{label_mx}: {sel_mx}")
-    filtre_label = " · ".join(mois_actifs) if mois_actifs else "TOUS MOIS"
-
-    st.markdown(f"""<div style="background:linear-gradient(135deg,#6B3FA0,#4527A0);color:white;padding:14px 20px;
-        border-radius:10px;margin:12px 0 20px 0;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:.5px">
-            TOTAL PIPELINE — {filtre_label}</span>
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:800">{fmt_kt(total_m)} KT</span>
-    </div>""", unsafe_allow_html=True)
-
-    # ─── TABLEAU PRINCIPAL ────────────────────────────────────────────────
+        # ─── TABLEAU PRINCIPAL ────────────────────────────────────────────────
     st.markdown('<div class="stitle">Tableau complet — toutes colonnes</div>', unsafe_allow_html=True)
 
     role_order = ["bl_month","phys_month","work_month","del_month",
@@ -1585,7 +1682,7 @@ elif page == "ventes":
 
     # ─── GÉNÉRATEUR DE RAPPORT ────────────────────────────────────────────
     st.markdown("---")
-    st.markdown('<div class="stitle purple">📊 Générer un Rapport Automatique</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stitle purple">Générer un Rapport Automatique</div>', unsafe_allow_html=True)
 
     with st.container():
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -1609,6 +1706,8 @@ elif page == "ventes":
         if df_rpt.empty:
             st.warning(f"Aucune donnée pour {mois_rapport}.")
         else:
+            # Ajouter colonne statut normalisé
+            # On recalcule le mapping numéro→label sur les données du rapport
             if c_stat_col and c_stat_col in df_rpt.columns:
                 build_num_map(df_rpt[c_stat_col])
                 df_rpt["__statut_norm__"] = df_rpt[c_stat_col].apply(normalize_statut)
@@ -1623,6 +1722,7 @@ elif page == "ventes":
                 if "SAFI" in val: return "SAFI"
                 return val
 
+            # En-tête rapport
             st.markdown(f"""
             <div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
                 border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
@@ -1634,17 +1734,22 @@ elif page == "ventes":
               </div>
             </div>""", unsafe_allow_html=True)
 
+            # Grouper par statut normalisé — trié selon l'ordre sémantique
             statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=_sort_key_statut_global)
 
             for statut_norm in statuts_rapport:
                 df_stat = df_rpt[df_rpt["__statut_norm__"] == statut_norm]
                 if df_stat.empty: continue
 
+                # Sous-statuts bruts pour le détail entre parenthèses
+                # On retire le préfixe numérique des noms bruts pour un affichage propre
                 if c_stat_col and c_stat_col in df_stat.columns:
                     raw_vals = df_stat[c_stat_col].dropna().astype(str).str.strip().unique().tolist()
+                    # Afficher les noms bruts uniques, triés par numéro interne
                     raw_vals_sorted = sorted(raw_vals, key=lambda v: (
                         int(_re.match(r"^(\d+)", v).group(1)) if _re.match(r"^\d+", v) else 999, v
                     ))
+                    # On affiche le détail entre parenthèses seulement s'il y a plusieurs sous-statuts
                     if len(raw_vals_sorted) <= 1:
                         sous_label = ""
                     else:
@@ -1652,11 +1757,13 @@ elif page == "ventes":
                 else:
                     sous_label = ""
 
+                # Totaux par décade pour ce statut
                 total_stat_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 and v_d1 in df_stat.columns else 0
                 total_stat_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 and v_d2 in df_stat.columns else 0
                 total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 and v_d3 in df_stat.columns else 0
                 total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
 
+                # Couleur selon statut normalisé (correspondance sémantique)
                 h_color, bg_color = "#12202E", "#F2F4F7"
                 _sn_low = statut_norm.lower()
                 if "en cours de chargement" in _sn_low:
@@ -1669,7 +1776,12 @@ elif page == "ventes":
                     h_color, bg_color = "#00843D", "#E8F5EE"
                 elif "fob" in _sn_low:
                     h_color, bg_color = "#B71C1C", "#FFEBEE"
+                elif "conf" in _sn_low:
+                    h_color, bg_color = "#1565C0", "#E3EAF8"
+                elif "res" in _sn_low and "capa" in _sn_low:
+                    h_color, bg_color = "#6B3FA0", "#F0EBF8"
 
+                # ── En-tête du statut avec décades ──
                 st.markdown(f"""
                 <div style="background:{bg_color};border:1px solid {h_color}33;border-left:4px solid {h_color};
                     border-radius:10px;padding:14px 18px;margin:14px 0 6px 0">
@@ -1677,7 +1789,7 @@ elif page == "ventes":
                     <div>
                       <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;
                           color:{h_color};text-transform:uppercase;letter-spacing:.5px">
-                        📌 {statut_norm}{sous_label}
+                        {statut_norm}{sous_label}
                       </div>
                     </div>
                     <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
@@ -1701,6 +1813,7 @@ elif page == "ventes":
                   </div>
                 </div>""", unsafe_allow_html=True)
 
+                # ─── Détail par Port/Site
                 if c_port_site and c_port_site in df_stat.columns:
                     ports_list = sorted(df_stat[c_port_site].dropna().unique())
                     for port_val in ports_list:
@@ -1711,13 +1824,14 @@ elif page == "ventes":
                         p_d2 = clean_num(df_port[v_d2]).sum() if v_d2 and v_d2 in df_port.columns else 0
                         p_d3 = clean_num(df_port[v_d3]).sum() if v_d3 and v_d3 in df_port.columns else 0
                         p_tot_port = p_d1 + p_d2 + p_d3
+
                         site_label = norm_site(port_val)
 
                         st.markdown(f"""
                         <div style="margin:6px 0 4px 20px;padding:10px 16px;background:white;border:1px solid #E0E4EA;
                             border-left:3px solid {h_color};border-radius:8px">
                           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                            <span style="font-size:14px;font-weight:700;color:#12202E">🚢 PORT : {site_label}</span>
+                            <span style="font-size:14px;font-weight:700;color:#12202E">PORT : {site_label}</span>
                             <div style="display:flex;gap:12px;align-items:center">
                               <span style="font-size:11px;color:#94A3B8">D1: <b style="color:#1565C0">{fmt_kt(p_d1)}</b></span>
                               <span style="font-size:11px;color:#94A3B8">D2: <b style="color:#C05A00">{fmt_kt(p_d2)}</b></span>
@@ -1729,6 +1843,7 @@ elif page == "ventes":
                           </div>
                         </div>""", unsafe_allow_html=True)
 
+                        # ─── Détail par Pays
                         c_pays = vmap.get("pays")
                         if c_pays and c_pays in df_port.columns:
                             pays_list = sorted(df_port[c_pays].dropna().unique())
@@ -1745,7 +1860,7 @@ elif page == "ventes":
                                 <div style="margin:3px 0 3px 44px;padding:8px 14px;background:#F8FAFC;
                                     border:1px solid #EEF0F4;border-radius:6px">
                                   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                                    <span style="font-size:12px;font-weight:600;color:#4A5568">🌍 {pays_val}</span>
+                                    <span style="font-size:12px;font-weight:600;color:#4A5568">{pays_val}</span>
                                     <div style="display:flex;gap:10px;align-items:center">
                                       <span style="font-size:10px;color:#94A3B8">D1:<b style="color:#1565C0"> {fmt_kt(py_d1)}</b></span>
                                       <span style="font-size:10px;color:#94A3B8">D2:<b style="color:#C05A00"> {fmt_kt(py_d2)}</b></span>
@@ -1754,6 +1869,7 @@ elif page == "ventes":
                                     </div>
                                   </div>""", unsafe_allow_html=True)
 
+                                # ─── Détail Produits
                                 c_prod_col = vmap.get("produit")
                                 if c_prod_col and c_prod_col in df_pays.columns:
                                     prods_list = sorted(df_pays[c_prod_col].dropna().unique())
@@ -1766,7 +1882,7 @@ elif page == "ventes":
                                         pr_tot = pr_d1 + pr_d2 + pr_d3
                                         prod_lines += (
                                             f'<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #F2F4F7">'
-                                            f'<span style="font-size:11px;color:#4A5568">📦 {p_name}</span>'
+                                            f'<span style="font-size:11px;color:#4A5568">{p_name}</span>'
                                             f'<div style="display:flex;gap:10px;align-items:center">'
                                             f'<span style="font-size:10px;color:#94A3B8">D1:<b style="color:#1565C0"> {fmt_kt(pr_d1)}</b></span>'
                                             f'<span style="font-size:10px;color:#94A3B8">D2:<b style="color:#C05A00"> {fmt_kt(pr_d2)}</b></span>'
@@ -1777,9 +1893,9 @@ elif page == "ventes":
                                     if prod_lines:
                                         st.markdown(f'<div style="margin-top:6px;padding:0 6px">{prod_lines}</div>', unsafe_allow_html=True)
 
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                st.markdown('</div>', unsafe_allow_html=True)  # Ferme div pays
 
-            # ─── RÉCAPITULATIF FINAL ──────────────────────────────────────
+            # ─── RÉCAPITULATIF FINAL DU MOIS ─────────────────────────────
             tot_rpt_d1  = clean_num(df_rpt[v_d1]).sum() if v_d1 and v_d1 in df_rpt.columns else 0
             tot_rpt_d2  = clean_num(df_rpt[v_d2]).sum() if v_d2 and v_d2 in df_rpt.columns else 0
             tot_rpt_d3  = clean_num(df_rpt[v_d3]).sum() if v_d3 and v_d3 in df_rpt.columns else 0
