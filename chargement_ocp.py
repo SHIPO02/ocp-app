@@ -284,6 +284,7 @@ hr { border-color:var(--border2) !important; }
 CACHE_DIR   = ".ocp_cache"
 JORF_CACHE  = os.path.join(CACHE_DIR,"jorf.pkl")
 SAFI_CACHE  = os.path.join(CACHE_DIR,"safi.pkl")
+# ── NOUVEAU : cache pipeline ventes ──
 VENTES_CACHE = os.path.join(CACHE_DIR,"ventes.pkl")
 HIST_JORF   = os.path.join(CACHE_DIR,"hist_jorf.json")
 HIST_SAFI   = os.path.join(CACHE_DIR,"hist_safi.json")
@@ -551,6 +552,7 @@ for key,cache in [("jorf_loaded",JORF_CACHE),("safi_loaded",SAFI_CACHE)]:
                 st.session_state["safi_name"]=c.get("filename","")
         st.session_state[key]=True
 
+# ── NOUVEAU : chargement cache ventes au démarrage ──
 if "ventes_loaded" not in st.session_state:
     c = load_cache(VENTES_CACHE)
     if c:
@@ -1237,6 +1239,23 @@ elif page == "ventes":
                 mapping[role] = exact[0] if exact else c
         return mapping
 
+    # ══════════════════════════════════════════════════════════
+    # NORMALISATION STATUT — regroupement par NOM SÉMANTIQUE
+    #
+    # Principe :
+    #   On retire TOUJOURS le préfixe numérique ("1.", "2.", "3."…)
+    #   puis on compare le nom pur (sans accents, minuscules) à une
+    #   liste de groupes sémantiques.
+    #
+    #   Groupes :
+    #     "En cours de chargement" ← en cours de chargement, en rade, nommé,
+    #                                  nomme, rade, charge au bord, chargement
+    #     "Laycan en discussion"   ← laycan
+    #     "En planif"              ← planif, en planification
+    #     "Recherche navire CFR"   ← recherche.*cfr, cfr
+    #     "Recherche navire FOB"   ← recherche.*fob, fob
+    #     Sinon → nom pur tel quel (sans numéro)
+    # ══════════════════════════════════════════════════════════
     import unicodedata as _uc, re as _re
 
     def _deaccent(t):
@@ -1244,18 +1263,27 @@ elif page == "ventes":
         return "".join(c for c in t if _uc.category(c) != "Mn").lower().strip()
 
     def _strip_num(s):
+        """Retire le préfixe numérique : '3. Recherche navire FOB' → 'Recherche navire FOB'"""
         return _re.sub(r"^\s*\d+\s*[.\-\):]\s*", "", str(s).strip()).strip()
 
+    # Table de regroupement sémantique : (liste de mots-clés) → label canonique
+    # L'ordre compte : premier match gagne
     _SEMANTIC_GROUPS = [
+        # ── En cours de chargement ──────────────────────────────────────────
         (["en cours de chargement", "en cours", "en rade", "rade",
           "nomme", "nommé", "nommee", "charge au bord", "chargement en cours",
           "chargement"], "En cours de chargement"),
+        # ── Laycan ──────────────────────────────────────────────────────────
         (["laycan"], "Laycan en discussion"),
+        # ── Planif ──────────────────────────────────────────────────────────
         (["planif"], "En planif"),
+        # ── Recherche navire CFR ─────────────────────────────────────────────
         (["cfr"], "Recherche navire CFR"),
+        # ── Recherche navire FOB ─────────────────────────────────────────────
         (["fob"], "Recherche navire FOB"),
     ]
 
+    # Ordre d'affichage souhaité dans le rapport
     _STATUT_ORDER = [
         "En cours de chargement",
         "Laycan en discussion",
@@ -1265,19 +1293,32 @@ elif page == "ventes":
     ]
 
     def normalize_statut(s):
+        """
+        Retourne le label canonique du statut (sans numéro, regroupé sémantiquement).
+        Ex: '1. En cours de chargement' → 'En cours de chargement'
+            '2. En Rade'               → 'En cours de chargement'
+            '3. Nommé'                 → 'En cours de chargement'
+            '4. Laycan en discussion'  → 'Laycan en discussion'
+            '5. En planif'             → 'En planif'
+            '6. Recherche navire CFR'  → 'Recherche navire CFR'
+            '7. Recherche navire FOB'  → 'Recherche navire FOB'
+        """
         raw = str(s).strip()
-        pure = _strip_num(raw)
-        pure_n = _deaccent(pure)
+        pure = _strip_num(raw)          # nom sans numéro
+        pure_n = _deaccent(pure)        # normalisé sans accents
         for kws, label in _SEMANTIC_GROUPS:
             for kw in kws:
                 if _deaccent(kw) in pure_n:
                     return label
+        # Pas de match → retourner le nom pur (sans numéro) tel quel
         return pure if pure else raw
 
     def build_num_map(df_col):
+        """Garde la compatibilité — ne fait plus rien, le mapping est sémantique."""
         pass
 
     def _sort_key_statut_global(x):
+        """Trie selon _STATUT_ORDER, puis alphabétique."""
         try:
             return (_STATUT_ORDER.index(x), x)
         except ValueError:
@@ -1316,6 +1357,7 @@ elif page == "ventes":
             st.session_state["ventes_df"]   = df_full
             st.session_state["ventes_map"]  = detected_map
             st.session_state["ventes_name"] = file_v.name
+            # ── Sauvegarde cache ventes ──
             save_cache(VENTES_CACHE, {"ventes_df": df_full, "ventes_map": detected_map, "filename": file_v.name})
             st.success(f"✅ Fichier importé — feuille « {target} » — {len(df_full)} lignes")
         except Exception as e:
@@ -1326,6 +1368,7 @@ elif page == "ventes":
 
     if df_raw is None:
         st.info("Chargez un fichier Excel Pipeline pour commencer.")
+        # Bouton pour effacer le cache si besoin
         if st.button("🗑️ Effacer le cache Pipeline", key="clear_ventes_cache"):
             clear_cache(VENTES_CACHE)
             st.session_state["ventes_df"]   = None
@@ -1361,6 +1404,7 @@ elif page == "ventes":
             new_map[rk] = sel if sel != "(non mappé)" else None
         if st.button("💾 Enregistrer le mapping", type="primary"):
             st.session_state["ventes_map"] = new_map
+            # ── Mise à jour cache avec nouveau mapping ──
             save_cache(VENTES_CACHE, {
                 "ventes_df": df_raw,
                 "ventes_map": new_map,
@@ -1394,35 +1438,30 @@ elif page == "ventes":
     else:
         statuts_norm = []
 
+    col_mois_ref = vmap.get("bl_month") or vmap.get("del_month") or vmap.get("work_month") or vmap.get("phys_month")
+
     MOIS_FR = ["Tous","Janvier","Février","Mars","Avril","Mai","Juin",
                "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
     MOIS_EN = ["All","January","February","March","April","May","June",
                "July","August","September","October","November","December"]
 
-    # ── LIGNE 1 : Les 4 filtres de mois ──────────────────────────────────
-    frow0 = st.columns(4)
-    sel_m_bl   = frow0[0].selectbox("📅 BL Month",       MOIS_FR, key="v_mois_bl")
-    sel_m_phys = frow0[1].selectbox("📅 Physical Month", MOIS_FR, key="v_mois_phys")
-    sel_m_work = frow0[2].selectbox("📅 Working Month",  MOIS_FR, key="v_mois_work")
-    sel_m_del  = frow0[3].selectbox("📅 Delivery Month", MOIS_FR, key="v_mois_del")
-
-    # ── LIGNE 2 : Site, Confirmation, Pays ───────────────────────────────
     frow1 = st.columns([2, 2, 2, 2])
-    sel_s  = frow1[0].selectbox("📍 Site", ["Tous","JORF","SAFI"], key="v_site")
-    sel_co = frow1[1].selectbox("✅ Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
-    sel_pays_opts = (["Tous"] + sorted(df_raw[vmap["pays"]].dropna().astype(str).str.strip().unique().tolist())) \
-        if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
-    sel_pays = frow1[2].selectbox("🌍 Pays", sel_pays_opts, key="v_pays")
-
-    # ── LIGNE 3 : Status Planif (multi-sélection) ─────────────────────────
     frow2 = st.columns([4, 4])
+
+    sel_m  = frow1[0].selectbox("📅 Mois", MOIS_FR, key="v_mois")
+    sel_s  = frow1[1].selectbox("📍 Site", ["Tous","JORF","SAFI"], key="v_site")
+    sel_co = frow1[2].selectbox("✅ Confirmation", ["Tous","CONF","Res.CAPA"], key="v_conf")
+    sel_pays_opts = (["Tous"] + sorted(df_raw[vmap["pays"]].dropna().astype(str).str.strip().unique().tolist()))  if vmap.get("pays") and vmap["pays"] in df_raw.columns else ["Tous"]
+    sel_pays = frow1[3].selectbox("🌍 Pays", sel_pays_opts, key="v_pays")
+
+    # ── NOUVEAU : Filtre multi-sélection Status Planif ──
     if statuts_norm:
         sel_statuts = frow2[0].multiselect(
             "📋 Status Planif (multi-sélection)",
             options=statuts_norm,
             default=[],
             key="v_statuts",
-            help="Laissez vide pour afficher tous les statuts."
+            help="Laissez vide pour afficher tous les statuts. Sélectionnez un ou plusieurs statuts."
         )
     else:
         sel_statuts = []
@@ -1430,24 +1469,16 @@ elif page == "ventes":
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Appliquer les filtres ──────────────────────────────────────────────
+    # Appliquer les filtres
     df_f = df_raw.copy()
 
-    # ── Filtre mois — 4 colonnes indépendantes ────────────────────────────
-    for sel_mx, role_key in [
-        (sel_m_bl,   "bl_month"),
-        (sel_m_phys, "phys_month"),
-        (sel_m_work, "work_month"),
-        (sel_m_del,  "del_month"),
-    ]:
-        if sel_mx != "Tous":
-            col_mx = vmap.get(role_key)
-            if col_mx and col_mx in df_f.columns:
-                mois_en_x = MOIS_EN[MOIS_FR.index(sel_mx)]
-                df_f = df_f[df_f[col_mx].astype(str).str.contains(
-                    f"{sel_mx}|{mois_en_x}", case=False, na=False)]
+    # Filtre mois
+    if sel_m != "Tous" and col_mois_ref and col_mois_ref in df_f.columns:
+        mois_en = MOIS_EN[MOIS_FR.index(sel_m)]
+        df_f = df_f[df_f[col_mois_ref].astype(str).str.contains(f"{sel_m}|{mois_en}", case=False, na=False)]
 
     # Filtre site
+    # Filtre site : utilise loading_port en priorité, sinon site
     _col_site_filtre = (vmap.get("loading_port") if vmap.get("loading_port") and vmap.get("loading_port") in df_f.columns
                         else vmap.get("site") if vmap.get("site") and vmap.get("site") in df_f.columns
                         else None)
@@ -1458,11 +1489,11 @@ elif page == "ventes":
     if sel_co != "Tous" and vmap.get("confirmation") and vmap["confirmation"] in df_f.columns:
         df_f = df_f[df_f[vmap["confirmation"]].astype(str).str.strip() == sel_co]
 
-    # Filtre pays
+    # Filtre pays — comparaison insensible à la casse et aux espaces
     if sel_pays != "Tous" and vmap.get("pays") and vmap["pays"] in df_f.columns:
         df_f = df_f[df_f[vmap["pays"]].astype(str).str.strip().str.lower() == sel_pays.strip().lower()]
 
-    # Filtre status planif multi-sélection
+    # ── NOUVEAU : Filtre status planif multi-sélection ──
     if sel_statuts and c_stat_col and c_stat_col in df_f.columns:
         df_f = df_f[df_f[c_stat_col].apply(lambda x: normalize_statut(x) in sel_statuts)]
 
@@ -1480,14 +1511,6 @@ elif page == "ventes":
             for s in sel_statuts
         )
         st.markdown(f'<div style="margin:-8px 0 12px 0">Filtre statut actif : {badges}</div>', unsafe_allow_html=True)
-
-    # Afficher les filtres mois actifs
-    mois_actifs = []
-    for sel_mx, label_mx in [(sel_m_bl,"BL"),(sel_m_phys,"Physical"),(sel_m_work,"Working"),(sel_m_del,"Delivery")]:
-        if sel_mx != "Tous":
-            mois_actifs.append(f'<span style="background:#E8F5EE;color:#00843D;border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700;margin-right:4px">{label_mx}: {sel_mx}</span>')
-    if mois_actifs:
-        st.markdown(f'<div style="margin:-8px 0 12px 0">Filtres mois actifs : {"".join(mois_actifs)}</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="stitle orange">Cumul — Résultats filtrés</div>', unsafe_allow_html=True)
 
@@ -1548,13 +1571,7 @@ elif page == "ventes":
     with dc3:
         st.markdown(build_card_html("D3 — Jours 21+",   val_d3, v_d3, "#00843D", "#00843D"), unsafe_allow_html=True)
 
-    # Label résumé des filtres mois actifs pour le bandeau total
-    mois_labels = []
-    for sel_mx, label_mx in [(sel_m_bl,"BL"),(sel_m_phys,"Phys"),(sel_m_work,"Work"),(sel_m_del,"Del")]:
-        if sel_mx != "Tous":
-            mois_labels.append(f"{label_mx}:{sel_mx}")
-    filtre_label = " · ".join(mois_labels) if mois_labels else "TOUS MOIS"
-
+    filtre_label = sel_m.upper() if sel_m != "Tous" else "TOUS MOIS"
     st.markdown(f"""<div style="background:linear-gradient(135deg,#6B3FA0,#4527A0);color:white;padding:14px 20px;
         border-radius:10px;margin:12px 0 20px 0;display:flex;justify-content:space-between;align-items:center">
         <span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:.5px">
@@ -1615,6 +1632,8 @@ elif page == "ventes":
         if df_rpt.empty:
             st.warning(f"Aucune donnée pour {mois_rapport}.")
         else:
+            # Ajouter colonne statut normalisé
+            # On recalcule le mapping numéro→label sur les données du rapport
             if c_stat_col and c_stat_col in df_rpt.columns:
                 build_num_map(df_rpt[c_stat_col])
                 df_rpt["__statut_norm__"] = df_rpt[c_stat_col].apply(normalize_statut)
@@ -1629,6 +1648,7 @@ elif page == "ventes":
                 if "SAFI" in val: return "SAFI"
                 return val
 
+            # En-tête rapport
             st.markdown(f"""
             <div style="background:linear-gradient(135deg,#00843D,#005C2A);color:white;padding:20px 28px;
                 border-radius:12px;margin:16px 0 20px 0;box-shadow:0 4px 16px rgba(0,132,61,.25)">
@@ -1640,17 +1660,22 @@ elif page == "ventes":
               </div>
             </div>""", unsafe_allow_html=True)
 
+            # Grouper par statut normalisé — trié selon l'ordre sémantique
             statuts_rapport = sorted(df_rpt["__statut_norm__"].dropna().unique().tolist(), key=_sort_key_statut_global)
 
             for statut_norm in statuts_rapport:
                 df_stat = df_rpt[df_rpt["__statut_norm__"] == statut_norm]
                 if df_stat.empty: continue
 
+                # Sous-statuts bruts pour le détail entre parenthèses
+                # On retire le préfixe numérique des noms bruts pour un affichage propre
                 if c_stat_col and c_stat_col in df_stat.columns:
                     raw_vals = df_stat[c_stat_col].dropna().astype(str).str.strip().unique().tolist()
+                    # Afficher les noms bruts uniques, triés par numéro interne
                     raw_vals_sorted = sorted(raw_vals, key=lambda v: (
                         int(_re.match(r"^(\d+)", v).group(1)) if _re.match(r"^\d+", v) else 999, v
                     ))
+                    # On affiche le détail entre parenthèses seulement s'il y a plusieurs sous-statuts
                     if len(raw_vals_sorted) <= 1:
                         sous_label = ""
                     else:
@@ -1658,11 +1683,13 @@ elif page == "ventes":
                 else:
                     sous_label = ""
 
+                # Totaux par décade pour ce statut
                 total_stat_d1 = clean_num(df_stat[v_d1]).sum() if v_d1 and v_d1 in df_stat.columns else 0
                 total_stat_d2 = clean_num(df_stat[v_d2]).sum() if v_d2 and v_d2 in df_stat.columns else 0
                 total_stat_d3 = clean_num(df_stat[v_d3]).sum() if v_d3 and v_d3 in df_stat.columns else 0
                 total_stat    = total_stat_d1 + total_stat_d2 + total_stat_d3
 
+                # Couleur selon statut normalisé (correspondance sémantique)
                 h_color, bg_color = "#12202E", "#F2F4F7"
                 _sn_low = statut_norm.lower()
                 if "en cours de chargement" in _sn_low:
@@ -1680,6 +1707,7 @@ elif page == "ventes":
                 elif "res" in _sn_low and "capa" in _sn_low:
                     h_color, bg_color = "#6B3FA0", "#F0EBF8"
 
+                # ── En-tête du statut avec décades ──
                 st.markdown(f"""
                 <div style="background:{bg_color};border:1px solid {h_color}33;border-left:4px solid {h_color};
                     border-radius:10px;padding:14px 18px;margin:14px 0 6px 0">
@@ -1711,6 +1739,7 @@ elif page == "ventes":
                   </div>
                 </div>""", unsafe_allow_html=True)
 
+                # ─── Détail par Port/Site
                 if c_port_site and c_port_site in df_stat.columns:
                     ports_list = sorted(df_stat[c_port_site].dropna().unique())
                     for port_val in ports_list:
@@ -1721,6 +1750,7 @@ elif page == "ventes":
                         p_d2 = clean_num(df_port[v_d2]).sum() if v_d2 and v_d2 in df_port.columns else 0
                         p_d3 = clean_num(df_port[v_d3]).sum() if v_d3 and v_d3 in df_port.columns else 0
                         p_tot_port = p_d1 + p_d2 + p_d3
+
                         site_label = norm_site(port_val)
 
                         st.markdown(f"""
@@ -1739,6 +1769,7 @@ elif page == "ventes":
                           </div>
                         </div>""", unsafe_allow_html=True)
 
+                        # ─── Détail par Pays
                         c_pays = vmap.get("pays")
                         if c_pays and c_pays in df_port.columns:
                             pays_list = sorted(df_port[c_pays].dropna().unique())
@@ -1764,6 +1795,7 @@ elif page == "ventes":
                                     </div>
                                   </div>""", unsafe_allow_html=True)
 
+                                # ─── Détail Produits
                                 c_prod_col = vmap.get("produit")
                                 if c_prod_col and c_prod_col in df_pays.columns:
                                     prods_list = sorted(df_pays[c_prod_col].dropna().unique())
@@ -1787,8 +1819,9 @@ elif page == "ventes":
                                     if prod_lines:
                                         st.markdown(f'<div style="margin-top:6px;padding:0 6px">{prod_lines}</div>', unsafe_allow_html=True)
 
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                st.markdown('</div>', unsafe_allow_html=True)  # Ferme div pays
 
+            # ─── RÉCAPITULATIF FINAL DU MOIS ─────────────────────────────
             tot_rpt_d1  = clean_num(df_rpt[v_d1]).sum() if v_d1 and v_d1 in df_rpt.columns else 0
             tot_rpt_d2  = clean_num(df_rpt[v_d2]).sum() if v_d2 and v_d2 in df_rpt.columns else 0
             tot_rpt_d3  = clean_num(df_rpt[v_d3]).sum() if v_d3 and v_d3 in df_rpt.columns else 0
