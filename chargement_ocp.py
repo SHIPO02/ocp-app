@@ -1227,6 +1227,7 @@ elif page == "ventes":
             ("confirmation",   ["confirm"]),
             ("pays",           ["pays"]),
             ("produit",        ["produit"]),
+            ("macro_qualite",  ["macro"]),
             ("loading_port",   ["loading", "port"]),
         ]:
             mapping[role] = fuzzy_col(df, *kws)
@@ -1239,23 +1240,17 @@ elif page == "ventes":
                 mapping[role] = exact[0] if exact else c
         return mapping
 
-    # ══════════════════════════════════════════════════════════
-    # NORMALISATION STATUT — regroupement par NOM SÉMANTIQUE
+    # ══════════════════════════════════════════════════════════════════════
+    # NORMALISATION STATUT — Regroupement par LLM (Claude API)
     #
-    # Principe :
-    #   On retire TOUJOURS le préfixe numérique ("1.", "2.", "3."…)
-    #   puis on compare le nom pur (sans accents, minuscules) à une
-    #   liste de groupes sémantiques.
-    #
-    #   Groupes :
-    #     "En cours de chargement" ← en cours de chargement, en rade, nommé,
-    #                                  nomme, rade, charge au bord, chargement
-    #     "Laycan en discussion"   ← laycan
-    #     "En planif"              ← planif, en planification
-    #     "Recherche navire CFR"   ← recherche.*cfr, cfr
-    #     "Recherche navire FOB"   ← recherche.*fob, fob
-    #     Sinon → nom pur tel quel (sans numéro)
-    # ══════════════════════════════════════════════════════════
+    # Architecture :
+    #   1. On retire les préfixes numériques ("1.", "2."…)
+    #   2. On envoie TOUS les statuts uniques à Claude en une seule requête
+    #   3. Claude retourne un mapping JSON { statut_brut → label_canonique }
+    #      en comprenant le sens métier réel (FOB ≠ CFR, CFR ≃ CFR-Hold…)
+    #   4. Le résultat est mis en cache dans st.session_state pour éviter
+    #      des appels répétés (on ne rappelle l'API que si les statuts changent)
+    # ══════════════════════════════════════════════════════════════════════
     import unicodedata as _uc, re as _re
 
     def _deaccent(t):
@@ -1266,119 +1261,102 @@ elif page == "ventes":
         """Retire le préfixe numérique : '3. Recherche navire FOB' → 'Recherche navire FOB'"""
         return _re.sub(r"^\s*\d+\s*[.\-\):]\s*", "", str(s).strip()).strip()
 
-    # Table de regroupement sémantique : (liste de mots-clés) → label canonique
-    # L'ordre compte : premier match gagne
-    # ══════════════════════════════════════════════════════════════════
-    # REGROUPEMENT SÉMANTIQUE INTELLIGENT (IA fuzzy)
-    #
-    # Principe : on retire le préfixe numérique, puis on regroupe les
-    # statuts dont le NOM PUR est "très proche" (distance de Levenshtein
-    # normalisée ≤ seuil, ou contenance de sous-chaîne commune).
-    #
-    # Les statuts sont regroupés DYNAMIQUEMENT depuis les données réelles :
-    # pas de liste figée. L'utilisateur voit les vrais libellés dans le
-    # filtre, le rapport regroupe les quasi-doublons.
-    # ══════════════════════════════════════════════════════════════════
+    def _sort_key_statut_global(x):
+        return (_deaccent(x), x)
 
-    def _levenshtein(a, b):
-        """Distance de Levenshtein simple."""
-        if len(a) < len(b): a, b = b, a
-        if not b: return len(a)
-        prev = list(range(len(b)+1))
-        for i, ca in enumerate(a):
-            curr = [i+1]
-            for j, cb in enumerate(b):
-                curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(0 if ca==cb else 1)))
-            prev = curr
-        return prev[-1]
+    # ── Cache LLM : évite de rappeler l'API à chaque rerun ────────────────
+    if "llm_statut_map" not in st.session_state:
+        st.session_state["llm_statut_map"] = {}
+    if "llm_statut_input_key" not in st.session_state:
+        st.session_state["llm_statut_input_key"] = ""
 
-    # Mots discriminants : si deux statuts diffèrent sur l'un de ces mots,
-    # ils NE PEUVENT PAS être dans le même cluster, même si le reste est proche.
-    # Ex: "Recherche navire FOB" ≠ "Recherche navire CFR" ≠ "Recherche navire CFR-Hold"
-    # hold et bord ne sont PAS discriminants : "CFR-Hold" ≃ "CFR", "Chargé au bord" ≃ "Chargé"
-    _DISCRIMINANT_WORDS = {"fob", "cfr", "cif", "cnf", "ddp", "exw", "fas", "fca",
-                           "rade", "planif", "laycan", "nomme",
-                           "chargement", "conf", "capa"}
-
-    def _discriminant_key(s):
-        """Extrait l'ensemble des mots discriminants présents dans le statut."""
-        words = set(_re.findall(r"[a-z0-9]+", _deaccent(s)))
-        return words & _DISCRIMINANT_WORDS
-
-    def _similar(a, b, threshold=0.88):
+    def _call_llm_clustering(statuts_purs: list) -> dict:
         """
-        True si les deux statuts appartiennent à la même famille sémantique :
-        - Mots discriminants identiques (FOB ≠ CFR, Rade ≠ Nommé…)
-        - Et l'un est préfixe de l'autre (CFR ≃ CFR-Hold, Chargé ≃ Chargé au bord)
-          OU ratio Levenshtein ≥ seuil (variantes mineures d'orthographe)
+        Envoie les statuts à Claude Sonnet via l'API Anthropic.
+        Claude retourne un JSON { "statut_original": "label_canonique" }.
+        Fallback : si l'API échoue, chaque statut garde son propre nom.
         """
-        da, db = _deaccent(a), _deaccent(b)
-        if da == db: return True
-        if _discriminant_key(a) != _discriminant_key(b): return False
-        # Règle préfixe : si l'un commence par l'autre suivi d'un séparateur
-        # ex: "cfr" → "cfr-hold", "chargé" → "chargé au bord"
-        shorter, longer = (da, db) if len(da) <= len(db) else (db, da)
-        if longer.startswith(shorter) and (
-            len(longer) == len(shorter) or longer[len(shorter)] in " -_/"
-        ):
-            return True
-        # Ratio Levenshtein pour variantes d'orthographe mineures
-        maxlen = max(len(da), len(db))
-        if maxlen == 0: return True
-        ratio = 1 - _levenshtein(da, db) / maxlen
-        return ratio >= threshold
+        import json as _json
+        statuts_str = "\n".join(f"- {s}" for s in statuts_purs)
+        prompt = f"""Tu es un expert en logistique maritime et commerce international.
+Voici une liste de statuts de planification de navires extraits d'un fichier Excel OCP (phosphates) :
 
-    def _cluster_statuts(statuts_purs):
-        """
-        Regroupe les statuts en clusters sémantiques stricts.
-        Deux statuts ne sont regroupés que s'ils ont les mêmes mots
-        discriminants ET un ratio de similarité ≥ 88%.
-        Ex: "Recherche navire CFR" + "Recherche navire CFR-Hold" → même cluster
-            "Recherche navire CFR" + "Recherche navire FOB"      → clusters séparés
-        """
-        clusters = []
-        for s in statuts_purs:
-            placed = False
-            for cluster in clusters:
-                rep = next(iter(cluster))
-                if _similar(s, rep):
-                    cluster.add(s)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({s})
-        # Label = membre le plus court (le plus générique) du cluster
-        mapping = {}
-        for cluster in clusters:
-            label = min(cluster, key=lambda x: (len(x), x))
-            for s in cluster:
-                mapping[s] = label
-        return mapping
+{statuts_str}
 
-    # Cache du mapping construit sur les données réelles
-    _statut_cluster_map = {}
+Ta mission : regrouper les statuts qui ont le MÊME SENS MÉTIER sous un label canonique commun.
+
+Règles métier strictes :
+- FOB et CFR sont des incoterms DIFFÉRENTS → groupes séparés obligatoirement
+- "CFR-Hold" et "CFR" sont la MÊME famille (Hold = modalité de paiement, pas un statut différent)
+- "Chargé" et "Chargé au bord" sont la MÊME famille
+- "En Rade", "Nommé", "En cours de chargement" sont des étapes opérationnelles différentes → groupes séparés
+- Garde le label le plus court et le plus générique comme nom du groupe
+- Retire les préfixes numériques (ex: "1.", "2.", "3.") dans les labels canoniques
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni explication :
+{{"statut_original_1": "Label Canonique", "statut_original_2": "Label Canonique", ...}}
+
+Exemple :
+{{"Recherche navire CFR": "Recherche navire CFR", "Recherche navire CFR-Hold": "Recherche navire CFR", "Recherche navire FOB": "Recherche navire FOB"}}"""
+
+        try:
+            import urllib.request as _urllib_request
+            payload = _json.dumps({
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}]
+            }).encode("utf-8")
+            req = _urllib_request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with _urllib_request.urlopen(req, timeout=15) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            raw_text = "".join(b.get("text","") for b in data.get("content",[]))
+            # Extraire le JSON de la réponse
+            match = _re.search(r"\{.*\}", raw_text, _re.DOTALL)
+            if match:
+                mapping = _json.loads(match.group(0))
+                return mapping
+        except Exception as e:
+            pass  # Fallback silencieux
+        # Fallback : chaque statut est son propre groupe
+        return {s: s for s in statuts_purs}
 
     def build_num_map(df_col):
-        """Construit le clustering sémantique depuis les données réelles."""
-        global _statut_cluster_map
+        """
+        Construit le mapping LLM statut → label canonique.
+        Utilise le cache si les statuts n'ont pas changé.
+        """
         purs = []
         seen = set()
         for v in df_col.dropna().unique():
             p = _strip_num(str(v).strip())
             if p and p not in seen:
                 purs.append(p); seen.add(p)
-        _statut_cluster_map = _cluster_statuts(purs)
+        # Clé de cache = ensemble trié des statuts
+        cache_key = "|".join(sorted(purs))
+        if cache_key == st.session_state["llm_statut_input_key"]:
+            return  # Même données → réutilise le cache
+        # Nouvel ensemble de statuts → appel LLM
+        with st.spinner("Analyse IA des statuts en cours..."):
+            mapping = _call_llm_clustering(purs)
+        st.session_state["llm_statut_map"]       = mapping
+        st.session_state["llm_statut_input_key"] = cache_key
 
     def normalize_statut(s):
-        """Retourne le label canonique (nom pur regroupé sémantiquement)."""
-        raw = str(s).strip()
+        """Retourne le label canonique LLM pour ce statut."""
+        raw  = str(s).strip()
         pure = _strip_num(raw)
         if not pure: pure = raw
-        return _statut_cluster_map.get(pure, pure)
+        # Cherche d'abord dans le mapping LLM (statut pur)
+        llm_map = st.session_state.get("llm_statut_map", {})
+        return llm_map.get(pure, pure)
 
-    def _sort_key_statut_global(x):
-        """Tri alphabétique (les clusters sont dynamiques, pas d'ordre fixe)."""
-        return (_deaccent(x), x)
+    # Cache du mapping (conservé pour compatibilité)
+    _statut_cluster_map = {}
 
     # ─── INIT ───────────────────────────────────────────────────────────────
     if "ventes_df" not in st.session_state:
@@ -1445,6 +1423,7 @@ elif page == "ventes":
             "confirmation": "Confirmation",
             "pays":         "Pays",
             "produit":      "Produit",
+            "macro_qualite": "Macro Qualité",
             "d1":           "D1",
             "d2":           "D2",
             "d3":           "D3",
@@ -1526,15 +1505,55 @@ elif page == "ventes":
     else:
         statuts_norm = []
 
-    # ── LIGNE 3 : Status Planif (multi, dynamique selon mois) ─────────────
+    # ── LIGNE 3 : Status Planif (multi, dynamique + badge LLM) ──────────────
     if statuts_norm:
+        # Afficher badge IA si le LLM a produit un mapping non trivial
+        llm_map = st.session_state.get("llm_statut_map", {})
+        # Regroupements effectués : statuts dont le label ≠ statut pur
+        regroupes = {k: v for k, v in llm_map.items() if k != v}
+        if regroupes:
+            details = "  |  ".join(f"{k} → {v}" for k, v in list(regroupes.items())[:5])
+            more = f" (+{len(regroupes)-5} autres)" if len(regroupes) > 5 else ""
+            st.markdown(
+                f'<div class="llm-badge">'
+                f'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">' 
+                f'<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>'
+                f'IA — {len(regroupes)} regroupement(s) détecté(s) : {details}{more}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        elif llm_map:
+            st.markdown(
+                '<div class="llm-badge">'
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">' 
+                '<path d="M20 6L9 17l-5-5"/></svg>'
+                f' IA — {len(llm_map)} statut(s) analysé(s), aucun regroupement nécessaire'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
         sel_statuts = st.multiselect(
             "Status Planif",
             options=statuts_norm,
             default=[],
             key="v_statuts",
-            help="Les statuts affichés correspondent aux mois sélectionnés."
+            help="Statuts analysés par IA. Les regroupements sémantiques sont appliqués automatiquement."
         )
+
+        # Expander pour voir le mapping complet
+        if llm_map:
+            with st.expander("Voir le mapping IA complet"):
+                rows_html = "".join(
+                    f'<div style="display:flex;justify-content:space-between;padding:4px 0;'
+                    f'border-bottom:1px solid #F2F4F7;font-size:11px;">'
+                    f'<span style="color:#4A5568">{k}</span>'
+                    f'<span style="font-weight:700;color:{"#6B3FA0" if k!=v else "#94A3B8"}">→ {v}</span></div>'
+                    for k, v in sorted(llm_map.items())
+                )
+                st.markdown(f'<div style="max-height:200px;overflow-y:auto">{rows_html}</div>', unsafe_allow_html=True)
+                if st.button("Réanalyser avec l'IA", key="reanalyze_llm", type="secondary"):
+                    st.session_state["llm_statut_input_key"] = ""  # Force un nouvel appel LLM
+                    st.rerun()
     else:
         sel_statuts = []
         if c_stat_col:
@@ -1627,9 +1646,17 @@ elif page == "ventes":
 
     # ── Cartes D1/D2/D3 — qualités cliquables (expander) ─────────────────
     def build_card_interactive(decade_label, val, col_dec, border_color, val_color):
+        """
+        Carte décade avec hiérarchie Macro Qualité → Produit :
+        - Affiche les macro qualités (TSP, MAP, DAP…) comme lignes cliquables
+        - Au clic : liste des produits détaillés de cette macro qualité
+        - Si pas de colonne macro_qualite : fallback sur produit directement
+        """
+        c_macro = vmap.get("macro_qualite")
+
         st.markdown(
             f'<div style="background:white;border:1px solid #E0E4EA;border-radius:10px;'
-            f'padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.07);border-top:3px solid {border_color};margin-bottom:4px">',
+            f'padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.07);border-top:3px solid {border_color}">',
             unsafe_allow_html=True
         )
         st.markdown(
@@ -1640,35 +1667,92 @@ elif page == "ventes":
             f'font-weight:500;color:#94A3B8;margin-left:3px">KT</span></div>',
             unsafe_allow_html=True
         )
-        if c_prod and c_prod in df_f.columns and col_dec and col_dec in df_f.columns and not df_f.empty:
-            grp = (
+
+        has_data = col_dec and col_dec in df_f.columns and not df_f.empty
+
+        if has_data and c_macro and c_macro in df_f.columns:
+            # ── Hiérarchie Macro Qualité → Produit ──────────────────────────
+            macro_grp = (
+                df_f.groupby(df_f[c_macro].astype(str).str.strip())[col_dec]
+                .apply(lambda s: clean_num(s).sum())
+                .sort_values(ascending=False)
+            )
+            total_dec = macro_grp.sum()
+            macro_items = [(m, v) for m, v in macro_grp.items() if v > 0]
+
+            if macro_items:
+                st.markdown(
+                    '<div style="border-top:1px solid #EEF0F4;padding-top:8px">'
+                    '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;'
+                    'color:#94A3B8;margin-bottom:6px">MACRO QUALITE</div>',
+                    unsafe_allow_html=True
+                )
+                for macro, mval in macro_items:
+                    pct = round(mval / total_dec * 100) if total_dec > 0 else 0
+                    bar_w = max(3, pct)
+                    # Expander = clic pour voir les produits
+                    with st.expander(f"{macro}  |  {fmt_kt(mval)} KT  ({pct}%)"):
+                        # Barre de progression
+                        st.markdown(
+                            f'<div style="height:4px;background:#E0E4EA;border-radius:2px;margin-bottom:10px">'
+                            f'<div style="width:{bar_w}%;height:4px;background:{border_color};border-radius:2px"></div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                        # Produits de cette macro qualité
+                        if c_prod and c_prod in df_f.columns:
+                            df_macro = df_f[df_f[c_macro].astype(str).str.strip() == macro]
+                            prod_grp = (
+                                df_macro.groupby(df_macro[c_prod].astype(str).str.strip())[col_dec]
+                                .apply(lambda s: clean_num(s).sum())
+                                .sort_values(ascending=False)
+                            )
+                            prod_items = [(p, v) for p, v in prod_grp.items() if v > 0]
+                            for pname, pval in prod_items:
+                                ppct = round(pval / mval * 100) if mval > 0 else 0
+                                st.markdown(
+                                    f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                                    f'padding:5px 0;border-bottom:1px solid #F2F4F7;">'
+                                    f'<span style="font-size:11px;color:#4A5568">{pname}</span>'
+                                    f'<div style="text-align:right">'
+                                    f'<span style="font-size:12px;font-weight:700;color:{val_color}">{fmt_kt(pval)} KT</span>'
+                                    f'<span style="display:block;font-size:9px;color:#94A3B8">{ppct}%</span>'
+                                    f'</div></div>',
+                                    unsafe_allow_html=True
+                                )
+                        else:
+                            st.caption("Mappez la colonne Produit pour voir le détail.")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        elif has_data and c_prod and c_prod in df_f.columns:
+            # ── Fallback : pas de macro qualité → affiche produit directement ──
+            prod_grp = (
                 df_f.groupby(df_f[c_prod].astype(str).str.strip())[col_dec]
                 .apply(lambda s: clean_num(s).sum())
                 .sort_values(ascending=False)
             )
-            total_dec = grp.sum()
-            items = [(p, v) for p, v in grp.items() if v > 0]
+            total_dec = prod_grp.sum()
+            items = [(p, v) for p, v in prod_grp.items() if v > 0]
             if items:
-                st.markdown('<div style="border-top:1px solid #EEF0F4;padding-top:8px">', unsafe_allow_html=True)
-                st.markdown('<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94A3B8;margin-bottom:6px">QUALITES</div>', unsafe_allow_html=True)
+                st.markdown(
+                    '<div style="border-top:1px solid #EEF0F4;padding-top:8px">'
+                    '<div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;'
+                    'color:#94A3B8;margin-bottom:6px">PRODUITS</div>',
+                    unsafe_allow_html=True
+                )
                 for prod, pval in items:
                     pct = round(pval / total_dec * 100) if total_dec > 0 else 0
                     bar_w = max(3, pct)
                     with st.expander(f"{prod}  |  {fmt_kt(pval)} KT  ({pct}%)"):
                         st.markdown(
-                            f'<div style="background:#F8FAFC;border-radius:6px;padding:10px 14px;">'
-                            f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-                            f'<span style="font-size:12px;font-weight:700;color:#12202E">{prod}</span>'
-                            f'<span style="font-size:14px;font-weight:800;color:{val_color}">{fmt_kt(pval)} KT</span>'
+                            f'<div style="height:4px;background:#E0E4EA;border-radius:2px">'
+                            f'<div style="width:{bar_w}%;height:4px;background:{border_color};border-radius:2px"></div>'
                             f'</div>'
-                            f'<div style="height:5px;background:#E0E4EA;border-radius:3px">'
-                            f'<div style="width:{bar_w}%;height:5px;background:{border_color};border-radius:3px"></div>'
-                            f'</div>'
-                            f'<div style="font-size:10px;color:#94A3B8;margin-top:5px">{pct}% du total {decade_label.split("—")[0].strip()}</div>'
-                            f'</div>',
+                            f'<div style="font-size:10px;color:#94A3B8;margin-top:6px">{pct}% du total {decade_label.split("—")[0].strip()}</div>',
                             unsafe_allow_html=True
                         )
                 st.markdown('</div>', unsafe_allow_html=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     dc1, dc2, dc3 = st.columns(3)
@@ -1683,7 +1767,7 @@ elif page == "ventes":
     st.markdown('<div class="stitle">Tableau complet — toutes colonnes</div>', unsafe_allow_html=True)
 
     role_order = ["bl_month","phys_month","work_month","del_month",
-                  "confirmation","pays","produit","d1","d2","d3","status","loading_port","site"]
+                  "confirmation","pays","macro_qualite","produit","d1","d2","d3","status","loading_port","site"]
     cols_display = []
     seen = set()
     for rk in role_order:
