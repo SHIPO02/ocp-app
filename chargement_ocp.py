@@ -1292,28 +1292,54 @@ elif page == "ventes":
             prev = curr
         return prev[-1]
 
-    def _similar(a, b, threshold=0.82):
-        """True si les deux chaînes sont sémantiquement très proches."""
-        a, b = _deaccent(a), _deaccent(b)
-        if a == b: return True
-        # containment : l'un contient l'autre (ex: "cfr" dans "cfr-hold")
-        if a in b or b in a: return True
-        # ratio de Levenshtein
-        maxlen = max(len(a), len(b))
+    # Mots discriminants : si deux statuts diffèrent sur l'un de ces mots,
+    # ils NE PEUVENT PAS être dans le même cluster, même si le reste est proche.
+    # Ex: "Recherche navire FOB" ≠ "Recherche navire CFR" ≠ "Recherche navire CFR-Hold"
+    # hold et bord ne sont PAS discriminants : "CFR-Hold" ≃ "CFR", "Chargé au bord" ≃ "Chargé"
+    _DISCRIMINANT_WORDS = {"fob", "cfr", "cif", "cnf", "ddp", "exw", "fas", "fca",
+                           "rade", "planif", "laycan", "nomme",
+                           "chargement", "conf", "capa"}
+
+    def _discriminant_key(s):
+        """Extrait l'ensemble des mots discriminants présents dans le statut."""
+        words = set(_re.findall(r"[a-z0-9]+", _deaccent(s)))
+        return words & _DISCRIMINANT_WORDS
+
+    def _similar(a, b, threshold=0.88):
+        """
+        True si les deux statuts appartiennent à la même famille sémantique :
+        - Mots discriminants identiques (FOB ≠ CFR, Rade ≠ Nommé…)
+        - Et l'un est préfixe de l'autre (CFR ≃ CFR-Hold, Chargé ≃ Chargé au bord)
+          OU ratio Levenshtein ≥ seuil (variantes mineures d'orthographe)
+        """
+        da, db = _deaccent(a), _deaccent(b)
+        if da == db: return True
+        if _discriminant_key(a) != _discriminant_key(b): return False
+        # Règle préfixe : si l'un commence par l'autre suivi d'un séparateur
+        # ex: "cfr" → "cfr-hold", "chargé" → "chargé au bord"
+        shorter, longer = (da, db) if len(da) <= len(db) else (db, da)
+        if longer.startswith(shorter) and (
+            len(longer) == len(shorter) or longer[len(shorter)] in " -_/"
+        ):
+            return True
+        # Ratio Levenshtein pour variantes d'orthographe mineures
+        maxlen = max(len(da), len(db))
         if maxlen == 0: return True
-        ratio = 1 - _levenshtein(a, b) / maxlen
+        ratio = 1 - _levenshtein(da, db) / maxlen
         return ratio >= threshold
 
     def _cluster_statuts(statuts_purs):
         """
-        Regroupe une liste de statuts purs en clusters sémantiques.
-        Retourne dict: statut_pur → label_canonique_du_cluster
+        Regroupe les statuts en clusters sémantiques stricts.
+        Deux statuts ne sont regroupés que s'ils ont les mêmes mots
+        discriminants ET un ratio de similarité ≥ 88%.
+        Ex: "Recherche navire CFR" + "Recherche navire CFR-Hold" → même cluster
+            "Recherche navire CFR" + "Recherche navire FOB"      → clusters séparés
         """
-        clusters = []  # liste de sets
+        clusters = []
         for s in statuts_purs:
             placed = False
             for cluster in clusters:
-                # comparer avec le représentant (premier élément)
                 rep = next(iter(cluster))
                 if _similar(s, rep):
                     cluster.add(s)
@@ -1321,7 +1347,7 @@ elif page == "ventes":
                     break
             if not placed:
                 clusters.append({s})
-        # Pour chaque cluster, le label = le membre le plus court (le plus générique)
+        # Label = membre le plus court (le plus générique) du cluster
         mapping = {}
         for cluster in clusters:
             label = min(cluster, key=lambda x: (len(x), x))
