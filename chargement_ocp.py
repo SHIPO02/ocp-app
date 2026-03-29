@@ -1265,10 +1265,17 @@ elif page == "ventes":
         return (_deaccent(x), x)
 
     # ── Cache LLM : évite de rappeler l'API à chaque rerun ────────────────
+    # Version du prompt — incrémenter force un reset du cache LLM
+    _LLM_PROMPT_VERSION = "v3"
     if "llm_statut_map" not in st.session_state:
         st.session_state["llm_statut_map"] = {}
     if "llm_statut_input_key" not in st.session_state:
         st.session_state["llm_statut_input_key"] = ""
+    # Reset cache si le prompt a changé
+    if st.session_state.get("llm_prompt_version") != _LLM_PROMPT_VERSION:
+        st.session_state["llm_statut_map"] = {}
+        st.session_state["llm_statut_input_key"] = ""
+        st.session_state["llm_prompt_version"] = _LLM_PROMPT_VERSION
 
     def _call_llm_clustering(statuts_purs: list) -> dict:
         """
@@ -1278,26 +1285,58 @@ elif page == "ventes":
         """
         import json as _json
         statuts_str = "\n".join(f"- {s}" for s in statuts_purs)
-        prompt = f"""Tu es un expert en logistique maritime et commerce international.
-Voici une liste de statuts de planification de navires extraits d'un fichier Excel OCP (phosphates) :
+        prompt = f"""Tu es un expert en logistique maritime OCP (Office Chérifien des Phosphates, Maroc).
+Voici une liste de statuts de planification de navires extraits d'un fichier Excel :
 
 {statuts_str}
 
 Ta mission : regrouper les statuts qui ont le MÊME SENS MÉTIER sous un label canonique commun.
+Un label canonique = le libellé le plus court et le plus générique du groupe.
 
-Règles métier strictes :
-- FOB et CFR sont des incoterms DIFFÉRENTS → groupes séparés obligatoirement
-- "CFR-Hold" et "CFR" sont la MÊME famille (Hold = modalité de paiement, pas un statut différent)
-- "Chargé" et "Chargé au bord" sont la MÊME famille
-- "En Rade", "Nommé", "En cours de chargement" sont des étapes opérationnelles différentes → groupes séparés
-- Garde le label le plus court et le plus générique comme nom du groupe
-- Retire les préfixes numériques (ex: "1.", "2.", "3.") dans les labels canoniques
+RÈGLES DE REGROUPEMENT (applique-les TOUTES sans exception) :
 
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni explication :
-{{"statut_original_1": "Label Canonique", "statut_original_2": "Label Canonique", ...}}
+1. CASSE et ACCENTS : ignorer complètement
+   - "En Planif" = "En planif" = "en planif" → label : "En planif"
+   - "Chargé" = "charge" = "Chargée" → même groupe
 
-Exemple :
-{{"Recherche navire CFR": "Recherche navire CFR", "Recherche navire CFR-Hold": "Recherche navire CFR", "Recherche navire FOB": "Recherche navire FOB"}}"""
+2. VARIANTES MINEURES : regrouper
+   - "Chargé" + "Chargé à bord" + "Chargé au bord" + "Charge bord" → label : "Chargé"
+   - "CFR-Hold" + "CFR Hold" + "CFR" → label : "Recherche navire CFR"
+   - "FOB-Hold" + "FOB Hold" + "FOB" → label : "Recherche navire FOB"
+   - "Nommé" + "Nomme" + "Nommée" → label : "Nommé"
+
+3. ÉTAPES OPÉRATIONNELLES : groupes SÉPARÉS
+   - "En rade" ≠ "Nommé" ≠ "En cours de chargement" ≠ "Chargé"
+   - Ces étapes sont DISTINCTES, ne pas les mélanger
+
+4. INCOTERMS : groupes STRICTEMENT SÉPARÉS
+   - FOB ≠ CFR ≠ CIF ≠ CNF ≠ DDU
+   - "Recherche navire FOB" et "Recherche navire CFR" → deux groupes séparés
+
+5. PRÉFIXES NUMÉRIQUES : les ignorer dans le label canonique
+   - "1. En cours de chargement" → label : "En cours de chargement"
+   - "2. En rade" → label : "En rade"
+
+6. CONTAINERS / MODES SPÉCIAUX : groupe séparé si présent
+   - "Containers", "Container", "CTR" → label : "Containers"
+
+Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown, pas d'explication) :
+{{"statut_original_exact_1": "Label Canonique", "statut_original_exact_2": "Label Canonique"}}
+
+IMPORTANT : les clés du JSON doivent être EXACTEMENT les statuts fournis en entrée (sans modification).
+
+Exemples de sortie attendue :
+{{
+  "En Planif": "En planif",
+  "En planif": "En planif",
+  "Chargé": "Chargé",
+  "Chargé à bord": "Chargé",
+  "Recherche navire CFR": "Recherche navire CFR",
+  "Recherche navire CFR-Hold": "Recherche navire CFR",
+  "Recherche navire FOB": "Recherche navire FOB",
+  "1. En cours de chargement": "En cours de chargement",
+  "2. En rade": "En rade"
+}}"""
 
         try:
             import urllib.request as _urllib_request
