@@ -288,6 +288,7 @@ SAFI_CACHE  = os.path.join(CACHE_DIR,"safi.pkl")
 VENTES_CACHE = os.path.join(CACHE_DIR,"ventes.pkl")
 HIST_JORF   = os.path.join(CACHE_DIR,"hist_jorf.json")
 HIST_SAFI   = os.path.join(CACHE_DIR,"hist_safi.json")
+HIST_VENTES = os.path.join(CACHE_DIR,"hist_ventes.json")
 HIST_FILES  = os.path.join(CACHE_DIR,"hist_files")
 os.makedirs(CACHE_DIR,exist_ok=True); os.makedirs(HIST_FILES,exist_ok=True)
 
@@ -534,6 +535,25 @@ def load_safi(raw,fname):
     st.session_state.update({"safi_df":sd,"safi_name":fname})
     save_cache(SAFI_CACHE,{"safi_df":sd,"filename":fname})
     return sd
+
+def load_ventes_hist(raw,fname):
+    """Recharge un fichier pipeline depuis l'historique."""
+    import io as _io, re as _re
+    ff=_io.BytesIO(raw); ff.name=fname; r,e=read_bytes(ff)
+    xl=__import__("pandas").ExcelFile(_io.BytesIO(r),engine=e)
+    target=xl.sheet_names[0]
+    for sn in xl.sheet_names:
+        if any(k in sn.lower() for k in ["january","pipeline","ventes","janvier","data"]):
+            target=sn; break
+    df=__import__("pandas").read_excel(_io.BytesIO(r),sheet_name=target,engine=e)
+    df.columns=[str(c).strip() for c in df.columns]
+    df=df.dropna(how="all")
+    # Import auto_map logic inline (simplified)
+    st.session_state.update({"ventes_df":df,"ventes_name":fname})
+    save_cache(VENTES_CACHE,{"ventes_df":df,"ventes_map":st.session_state.get("ventes_map",{}),"filename":fname})
+    # Reset LLM cache so it re-analyses
+    st.session_state["llm_statut_input_key"]=""
+    return df
 
 # ══════════════════════════════════════════════════════
 # SESSION STATE INIT
@@ -786,37 +806,47 @@ if page=="accueil":
                     st.session_state["page"]=nav_key; st.rerun()
 
     st.markdown('<div class="stitle">Historique des fichiers chargés</div>', unsafe_allow_html=True)
-    hj=load_hist(HIST_JORF); hs=load_hist(HIST_SAFI)
-    col_hj,col_hs=st.columns(2)
-    for col,hist,hist_path,label,color,loader_fn in [
-        (col_hj,hj,HIST_JORF,"Jorf Lasfar","jorf",load_jorf),
-        (col_hs,hs,HIST_SAFI,"Safi","safi",load_safi),
-    ]:
+    hj=load_hist(HIST_JORF); hs=load_hist(HIST_SAFI); hv=load_hist(HIST_VENTES)
+    col_hj, col_hs, col_hv = st.columns(3)
+
+    def _render_hist_col(col, hist, label, color, loader_fn, name_key):
+        clr_map  = {"jorf":"#00843D","safi":"#1565C0","ventes":"#6B3FA0"}
+        bg_map   = {"jorf":"#E8F5EE","safi":"#E3EAF8","ventes":"#F0EBF8"}
+        h_clr = clr_map.get(color,"#94A3B8")
+        h_bg  = bg_map.get(color,"#F2F4F7")
         with col:
-            st.markdown(f"""<div class="card"><div class="card-title">Historique — {label}</div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="card"><div class="card-title" style="color:{h_clr}">Historique — {label}</div>', unsafe_allow_html=True)
             if hist:
-                active_name=st.session_state.get(f"{color}_name","")
+                active_name = st.session_state.get(name_key,"")
                 for i,e in enumerate(hist[:8]):
-                    is_act=e["filename"]==active_name
-                    dot_cls="hist-active" if is_act else "hist-inactive"
-                    act_txt=" — <b style='color:#00843D'>Actif</b>" if is_act else ""
-                    st.markdown(f"""
-                    <div class="hist-item">
+                    is_act   = e["filename"]==active_name
+                    dot_cls  = "hist-active" if is_act else "hist-inactive"
+                    act_html = f' — <b style="color:{h_clr}">Actif</b>' if is_act else ""
+                    st.markdown(f'''<div class="hist-item">
                       <div>
-                        <div style="display:flex;align-items:center;gap:8px"><span class="{dot_cls}"></span><span class="hist-item-name">{e['filename']}</span><span class="hist-tag {color}">{color.upper()}</span></div>
-                        <div class="hist-item-date" style="margin-left:15px">{e['date_upload']}{act_txt}</div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span class="{dot_cls}"></span>
+                          <span class="hist-item-name">{e["filename"]}</span>
+                          <span style="background:{h_bg};color:{h_clr};border-radius:10px;padding:2px 8px;
+                            font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase">{color.upper()}</span>
+                        </div>
+                        <div class="hist-item-date" style="margin-left:15px">{e["date_upload"]}{act_html}</div>
                       </div>
-                    </div>""", unsafe_allow_html=True)
+                    </div>''', unsafe_allow_html=True)
                     if not is_act:
-                        if st.button(f"↩ Recharger",key=f"rl_{color}_{i}",use_container_width=True):
-                            raw=get_hist_bytes(e)
+                        if st.button("Recharger", key=f"rl_{color}_{i}", use_container_width=True):
+                            raw = get_hist_bytes(e)
                             if raw:
-                                try: loader_fn(raw,e["filename"]); st.rerun()
+                                try: loader_fn(raw, e["filename"]); st.rerun()
                                 except Exception as ex: st.error(str(ex))
                             else: st.error("Fichier introuvable.")
             else:
                 st.markdown(f'<div style="color:#94A3B8;font-size:12px;padding:12px 0">Aucun fichier {label} dans l\'historique.</div>', unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
+
+    _render_hist_col(col_hj, hj, "Jorf Lasfar", "jorf",   load_jorf,        "jorf_name")
+    _render_hist_col(col_hs, hs, "Safi",         "safi",   load_safi,        "safi_name")
+    _render_hist_col(col_hv, hv, "Pipeline",     "ventes", load_ventes_hist, "ventes_name")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1432,6 +1462,7 @@ Exemples de sortie attendue :
             st.session_state["ventes_name"] = file_v.name
             # ── Sauvegarde cache ventes ──
             save_cache(VENTES_CACHE, {"ventes_df": df_full, "ventes_map": detected_map, "filename": file_v.name})
+            file_v.seek(0); add_hist(HIST_VENTES, file_v.name, file_v.read(), "ventes")
             st.success(f"✅ Fichier importé — feuille « {target} » — {len(df_full)} lignes")
         except Exception as e:
             st.error(f"Erreur : {e}")
